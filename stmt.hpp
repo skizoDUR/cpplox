@@ -65,4 +65,18 @@ public:
 	
 };
 
+template <typename T>
+class While : public Stmt<T> {
+public:
+	While(std::unique_ptr<Expr<T>> &condition, std::unique_ptr<Stmt<T>> &Then) : condition(std::move(condition)), Then(std::move(Then)) {};
+	void accept(visitor<T> &visitor) {return visitor.visit(*this);}
+	std::unique_ptr<Expr<T>> condition;
+	std::unique_ptr<Stmt<T>> Then;
+};
+
+template <typename T>
+class Break : public Stmt<T> {
+	void accept(visitor<T> &visitor) {return visitor.visit(*this);}
+};
+
 #endif

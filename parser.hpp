@@ -6,6 +6,8 @@
 #include "token.cpp"
 #include "token_type.hpp"
 #include "stmt.hpp"
+#include "finally.cpp"
+#include <array>
 #include <exception>
 #include <vector>
 
@@ -16,6 +18,7 @@ class parser {
 private:
 	std::vector<token> tokens;
 	int current = 0;
+	bool is_at_loop = 0;
 	std::unique_ptr<Stmt<T>> var_declaration()
 	{
 		auto name = consume(token_type::IDENTIFIER, "Expected identifier name");
@@ -36,7 +39,6 @@ private:
 			synchronize();
 			return {};
 		}
-
 	}
 	std::unique_ptr<Stmt<T>> expression_statement()
 	{
@@ -77,8 +79,70 @@ private:
 			else_ = statement();
 		return std::make_unique<If<T>>(condition, then, else_);
 	}
+	std::unique_ptr<Stmt<T>> while_statement()
+	{
+		is_at_loop = 1;
+		consume(token_type::LEFT_PAREN, "'(' Expected after while.");
+		std::unique_ptr<Expr<T>> condition = expression();
+		consume(token_type::RIGHT_PAREN, "')' Expected after condition.");
+		std::unique_ptr<Stmt<T>> then = statement();
+		finally restore([&] {is_at_loop = 0;});
+		return std::make_unique<While<T>>(condition, then);
+	}
+	std::unique_ptr<Stmt<T>> for_statement()
+	{
+		is_at_loop = 1;
+		consume(token_type::LEFT_PAREN, "'(' Expected after for.");
+		std::unique_ptr<Stmt<T>> initializer;
+		if (!match(token_type::SEMICOLON)) { //basically consumes for (; ...)
+			if (match(token_type::VAR))
+				initializer = var_declaration();
+			else initializer = expression_statement();
+		}
+		std::unique_ptr<Expr<T>> condition;
+		if (!match(token_type::SEMICOLON)) { //gets rid of for (; ; ...)
+			condition = expression();
+			consume(token_type::SEMICOLON, "Expected ';' after loop condition.");
+		}
+		
+		std::unique_ptr<Expr<T>> increase; //i++ ..
+		if (!match(token_type::RIGHT_PAREN)) {
+			increase = expression();
+			consume(token_type::RIGHT_PAREN, "Expected ')' after for clauses.");
+		}
+		
+		std::unique_ptr<Stmt<T>> body = statement();
+		if (increase.get()) {
+			std::vector<std::unique_ptr<Stmt<T>>> tmp;
+			tmp.push_back(std::move(body));
+			tmp.push_back(std::make_unique<Expression<T>>(increase));
+			body = std::make_unique<Block<T>>(tmp);
+		}
+		if (!condition.get()) condition = std::make_unique<Literal<T>>(true);
+		body = std::make_unique<While<T>>(condition, body);
+
+		if (initializer.get()) { //there's an initializer
+			std::vector<std::unique_ptr<Stmt<T>>> tmp;
+			tmp.push_back(std::move(initializer));
+			tmp.push_back(std::move(body));
+			body = std::make_unique<Block<T>>(tmp);
+		}
+		//we add the initializer to the beginning of the loop
+		finally restore([&] {is_at_loop = 0;});
+		return body;
+	}
 	std::unique_ptr<Stmt<T>> statement()
 	{
+		/*if (match(token_type::BREAK)) {
+			if (!is_at_loop)
+				throw (error(previous(), "Break used outside of loop"));
+			consume(token_type::SEMICOLON, "Expected ';'");
+			return std::make_unique<Break<T>>();
+			}*/
+		if (match(token_type::WHILE))
+			return while_statement();
+		if (match(token_type::FOR))
+			return for_statement();
 		if (match(token_type::IF))
 			return if_statement();
 		if (match(token_type::PRINT))
@@ -105,7 +169,7 @@ private:
 		}
 		if (match(token_type::IDENTIFIER)) 
 			return std::make_unique<Variable<T>>(previous());
-	
+		
 		throw(error(peek(), "Expected expression "));
 		//above throws a std::exception, calling a function that calls
 		//lox::error and returns the exception
@@ -181,9 +245,29 @@ private:
 		return expr;
 
 	}
-	std::unique_ptr<Expr<T>> assignment()
+	std::unique_ptr<Expr<T>> and_()
 	{
 		auto expr = equality();
+		if (match(token_type::AND)) {
+			auto Operator = previous();
+			auto right = expression();
+			expr = std::make_unique<Logical<T>>(expr, Operator, right);
+		}
+		return expr;
+	}
+	std::unique_ptr<Expr<T>> or_()
+	{
+		auto expr = and_();
+		if (match(token_type::OR)) {
+			auto Operator = previous();
+			auto right = expression();
+			expr = std::make_unique<Logical<T>>(expr, Operator, right);
+		}
+		return expr;
+	}
+	std::unique_ptr<Expr<T>> assignment()
+	{
+		auto expr = or_();
 		if (match(token_type::EQUAL)) {
 			token equals = previous();
 			auto value = assignment();

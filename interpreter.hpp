@@ -5,8 +5,10 @@
 #include "environment.hpp"
 #include "expr.cpp"
 #include "stmt.hpp"
+#include "token_type.hpp"
 #include "visitor.hpp"
 #include "runtime_error.cpp"
+#include "finally.cpp"
 #include "lox.hpp"
 #include <any>
 #include <vector>
@@ -54,7 +56,7 @@ private:
 			return false;
 		if (thing.type() == typeid(bool))
 			return std::any_cast<bool>(thing);
-		return false;
+		return true;
 
 	}
 	T evaluate(std::unique_ptr<Expr<T>> &expr)
@@ -68,15 +70,23 @@ private:
 	}
 	void execute_block(std::vector<std::unique_ptr<Stmt<T>>> &stmts, environment env)
 	{
-		auto previous = this->Environment;
+		/*environment previous = this->Environment; //it's crucial to keep a reference !
 		this->Environment = env;
-		try {
-			for (auto i = stmts.begin(); i != stmts.end(); i++)
-				execute(*i);
-		}
-		catch(...) {}
-		this->Environment = previous;
-
+		for (auto i = stmts.begin(); i != stmts.end(); i++)
+			execute(*i);
+		finally restore_env([&] {
+					    this->Environment = previous;
+				    });
+		*/
+		environment previous = this->Environment;
+		env.enclosing = &previous;
+		this->Environment = env;
+		for (auto i = stmts.begin(); i != stmts.end(); i++)
+			execute(*i);
+		finally restore_env([&] {
+					    this->Environment = previous;
+				    });
+		
 	}
 	//void execute(Stmt<T> &);
 public:
@@ -87,26 +97,26 @@ public:
 	}
 	void visit(Expression<T> &stmt)
 	{
-		if (lox::repl_mode) {
-			std::unique_ptr<Stmt<T>> print = std::make_unique<Print<T>>(stmt.expression);
-			execute(print);
-			return;
-		}
-		evaluate(stmt.expression);
-	}
-	void visit(Print<T> &stmt)
-	{
 		auto result = evaluate(stmt.expression);
-
+		if (lox::repl_mode)
+			print_any(result);
+	}
+	void print_any(std::any &result)
+	{
 		if (result.type() == typeid(double))
- 			std::cout << std::any_cast<double>(result) << '\n';
+			std::cout << std::any_cast<double>(result) << '\n';
  		if (result.type() == typeid(std::string))
- 			std::cout << '"' << std::any_cast<std::string>(result) << '"' << '\n';
+			std::cout << '"' << std::any_cast<std::string>(result) << '"' << '\n';
  		if (result.type() == typeid(bool)) {
  			if (std::any_cast<bool>(result))
  				std::cout << "true\n";
  			else std::cout << "false\n";
  		}
+	}
+	void visit(Print<T> &stmt)
+	{
+		auto result = evaluate(stmt.expression);
+		print_any(result);
 	}
 	void visit(Var<T> &stmt)
 	{
@@ -117,7 +127,7 @@ public:
 	}
 	void visit(Block<T> &stmt)
 	{
-		execute_block(stmt.statements, {this->Environment});
+		execute_block(stmt.statements, {});
 	}
 	void visit(If<T> &stmt)
 	{
@@ -126,6 +136,14 @@ public:
 			execute(stmt.Then);
 		else if (stmt.Else.get())
 			execute(stmt.Else);
+	}
+	void visit(While<T> &stmt)
+	{
+		auto condition = evaluate(stmt.condition);
+		while (is_truthy(condition)) {
+			execute(stmt.Then);
+			condition = evaluate(stmt.condition);
+		}
 	}
 	//expressions
 	T visit(Expr<T> &expr)
@@ -196,6 +214,20 @@ public:
 		return nullptr;
 
 	}
+	T visit(Logical<T> &expr)
+	{
+		auto left = evaluate(expr.left);
+		if (expr.Operator.type == token_type::OR) {
+			if (is_truthy(left))
+				return left;
+		}
+		else {
+			if (!is_truthy(left))
+				return left;
+		}
+		return evaluate(expr.right);
+	}
+
 	T visit(Variable<T> &expr)
 	{
 		return Environment.get(expr.name);
@@ -205,7 +237,6 @@ public:
 		auto value = evaluate(expr.value);
 		Environment.assign(expr.name, value);
 		return value;
-
 	}
 	interpreter() {};
 	~interpreter()  = default;

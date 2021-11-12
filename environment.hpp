@@ -14,7 +14,5 @@ public:
 	void assign(token name, std::any value);
 	void define(std::string , std::any);
 	std::any get(token &);
-
-
 };
 #endif
