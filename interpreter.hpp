@@ -5,10 +5,12 @@
 #include "environment.hpp"
 #include "expr.cpp"
 #include "stmt.hpp"
+#include "token.cpp"
 #include "token_type.hpp"
 #include "visitor.hpp"
 #include "runtime_error.cpp"
 #include "finally.cpp"
+#include "lox_function.hpp"
 #include "lox.hpp"
 #include <any>
 #include <vector>
@@ -16,10 +18,19 @@
 
 class lox;
 
+struct Return : public runtime_exception {
+public:
+	Return(token &Token, std::string msg, std::any value) :
+		Token(Token), msg(msg), value(value) {}
+	token &Token;
+	std::string msg;
+	std::any value;
+};
+
+
 template <typename T>
 class interpreter : public visitor<T> {
-private:
-	environment Environment;
+public:
 	void check_number_operand(token &Operator, std::any &operand)
 	{
 		if (operand.type() == typeid(double))
@@ -57,7 +68,6 @@ private:
 		if (thing.type() == typeid(bool))
 			return std::any_cast<bool>(thing);
 		return true;
-
 	}
 	T evaluate(std::unique_ptr<Expr<T>> &expr)
 	{
@@ -68,16 +78,13 @@ private:
 		stmt->accept(*this);
 		return {};
 	}
+	T execute(std::shared_ptr<Stmt<T>> &stmt)
+	{
+		stmt->accept(*this);
+		return {};
+	}
 	void execute_block(std::vector<std::unique_ptr<Stmt<T>>> &stmts, environment env)
 	{
-		/*environment previous = this->Environment; //it's crucial to keep a reference !
-		this->Environment = env;
-		for (auto i = stmts.begin(); i != stmts.end(); i++)
-			execute(*i);
-		finally restore_env([&] {
-					    this->Environment = previous;
-				    });
-		*/
 		environment previous = this->Environment;
 		env.enclosing = &previous;
 		this->Environment = env;
@@ -86,10 +93,23 @@ private:
 		finally restore_env([&] {
 					    this->Environment = previous;
 				    });
-		
+	}
+
+	void execute_block(std::vector<std::shared_ptr<Stmt<T>>> &stmts, environment &env)
+	{
+		environment previous = this->Environment;
+		env.enclosing = &previous;
+		this->Environment = env;
+		for (auto i = stmts.begin(); i != stmts.end(); i++)
+			execute(*i);
+		finally restore_env([&] {
+					    this->Environment = previous;
+				    });
 	}
 	//void execute(Stmt<T> &);
 public:
+	static inline environment globals;
+	static inline environment &Environment = globals;
 	//statements
 	void visit(Stmt<T> &stmt) override
 	{
@@ -145,12 +165,22 @@ public:
 			condition = evaluate(stmt.condition);
 		}
 	}
+
+	void visit(Function<T> &stmt)
+	{
+		lox_function<T> function(stmt, Environment);
+		Environment.define(stmt.name.lexeme, function);
+	}
+	void visit(Return_stmt<T> &stmt)
+	{
+		throw Return(stmt.keyword, {}, evaluate(stmt.value));
+	}
 	//expressions
 	T visit(Expr<T> &expr)
 	{
 		return expr.accept(*this);
 	}
-	T visit(Binary  <T> &expr)
+	T visit(Binary<T> &expr)
 	{
 		auto left = evaluate(expr.left);
 		auto right = evaluate(expr.right);
@@ -212,7 +242,27 @@ public:
 			return !is_truthy(right);
 		}
 		return nullptr;
+	}
+	T visit(Call<T> &expr)
+	{
+		std::any callee = evaluate(expr.callee);
+		
+		try {
+			lox_function<T> function(std::any_cast<lox_function<T>>(callee));
+			std::vector<T> arguments;
+			for (auto &i : expr.arguments)
+				arguments.push_back(evaluate(i));
 
+			if ((int)arguments.size() != function.arity())
+				throw(runtime_exception(expr.paren, "Expected " + std::to_string(function.arity()) + " But got " + std::to_string(arguments.size())));
+						
+			return function.call(*this, arguments);
+		}
+
+		catch(std::bad_any_cast &) {
+			throw(runtime_exception(expr.paren, "Can only call functions and classes."));
+		}
+		return {};
 	}
 	T visit(Logical<T> &expr)
 	{
@@ -238,7 +288,14 @@ public:
 		Environment.assign(expr.name, value);
 		return value;
 	}
-	interpreter() {};
+	T visit(Lambda<T> &expr)
+	{
+		return lox_function<T>(*(expr.function), Environment);
+	}
+	
+	interpreter()
+	{
+	};
 	~interpreter()  = default;
 	T interpret(std::vector<std::unique_ptr<Stmt<T>>> &stmts)
 	{

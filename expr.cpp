@@ -4,9 +4,13 @@
 #include "token.cpp"
 #include <any>
 #include <memory>
+#include <vector>
 
 template <typename T>
 class visitor;
+
+template <typename T>
+class Function;
 
 template <typename T>
 struct Expr{
@@ -111,6 +115,38 @@ public:
 	Logical() {};
 	virtual ~Logical() override = default;
 
+};
+
+template <typename T>
+class Call : public Expr<T> {
+public:
+	std::unique_ptr<Expr<T>> callee;
+	token paren;
+	std::vector<std::unique_ptr<Expr<T>>> arguments;
+	T accept(visitor<T> &visitor) override
+	{
+		return visitor.visit(*this);
+	}
+	Call(std::unique_ptr<Expr<T>> &callee, token paren, std::vector<std::unique_ptr<Expr<T>>> &arguments) :
+		callee(std::move(callee)), paren(paren)
+	{
+		for (auto &i : arguments)
+			this->arguments.push_back(std::move(i));
+	}
+		
+	Call() {};
+	virtual ~Call() override = default;
+};
+
+template <typename T>
+class Lambda : public Expr<T> {
+public:
+	T accept(visitor<T> &visitor) override
+	{
+		return visitor.visit(*this);
+	}
+	std::unique_ptr<Function<T>> function;
+	Lambda(std::unique_ptr<Function<T>> &function) : function(std::move(function)) {}
 };
 
 #endif

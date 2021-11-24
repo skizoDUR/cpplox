@@ -61,22 +61,50 @@ public:
 	std::unique_ptr<Expr<T>> condition;
 	std::unique_ptr<Stmt<T>> Else;
 	std::unique_ptr<Stmt<T>> Then;
-
-	
 };
 
 template <typename T>
 class While : public Stmt<T> {
 public:
-	While(std::unique_ptr<Expr<T>> &condition, std::unique_ptr<Stmt<T>> &Then) : condition(std::move(condition)), Then(std::move(Then)) {};
+	While(std::unique_ptr<Expr<T>> &condition, std::unique_ptr<Stmt<T>> &Then) : condition(std::move(condition)), Then(std::move(Then)) {}
 	void accept(visitor<T> &visitor) {return visitor.visit(*this);}
 	std::unique_ptr<Expr<T>> condition;
 	std::unique_ptr<Stmt<T>> Then;
 };
 
 template <typename T>
-class Break : public Stmt<T> {
+class Function : public Stmt<T> {
+public:
 	void accept(visitor<T> &visitor) {return visitor.visit(*this);}
+
+	Function() {};
+
+	Function(const Function<T> &other)
+	{
+		name = other.name;
+		params = other.params;
+		body = other.body;
+	}
+
+	Function(token name, std::vector<token> &params, std::vector<std::unique_ptr<Stmt<T>>> &body) : name(name), params(params)
+	{
+		for (auto &i : body) this->body.push_back(std::move(i));
+	}
+	token name;
+	std::vector<token> params;
+	std::vector<std::shared_ptr<Stmt<T>>> body;
+	//std::vector<std::unique_ptr<Stmt<T>>> body;
 };
+
+template <typename T>
+class Return_stmt : public Stmt<T> {
+public:
+	void accept(visitor<T> &visitor) {return visitor.visit(*this);}
+	Return_stmt(token &keyword, std::unique_ptr<Expr<T>> &value) : keyword(keyword), value(std::move(value)) {}
+
+	token keyword;
+	std::unique_ptr<Expr<T>> value;
+};
+
 
 #endif

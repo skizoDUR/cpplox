@@ -13,6 +13,7 @@
 
 struct parser_exception : public std::exception {token_type token; const char *msg;};
 
+
 template <typename T>
 class parser {
 private:
@@ -27,13 +28,18 @@ private:
 			initializer = expression();
 		consume(token_type::SEMICOLON, "Expected ';' after variable declaration.");
 		return std::make_unique<Var<T>>(name, initializer);
-
 	}
 	std::unique_ptr<Stmt<T>> declaration()
 	{
 		try {
 			if (match(token_type::VAR))
 				return var_declaration();
+			if (match(token_type::FUN)) {
+				if (check(token_type::IDENTIFIER))
+					return function("function");
+				current--; //go back to "fun"
+			}
+			
 			return statement();
 		} catch (parser_exception &error){
 			synchronize();
@@ -49,7 +55,25 @@ private:
 			match(token_type::SEMICOLON);
 		
 		return std::make_unique<Expression<T>>(expr);
-
+	}
+	
+	std::unique_ptr<Stmt<T>> function(std::string s)
+	{
+	
+		token name = consume(token_type::IDENTIFIER, "Expected " + s + " name.");
+		consume(token_type::LEFT_PAREN, "Expected '(' after " + s + " name.");
+		std::vector<token> parameters;
+		if (!check(token_type::RIGHT_PAREN)) {
+			do {
+				if (parameters.size() >= 255)
+					error(peek(), "Can't have more than 255 parameters.");
+				parameters.push_back(consume(token_type::IDENTIFIER, "Expected identifier."));
+			} while (match(token_type::COMMA));
+		}
+		consume(token_type::RIGHT_PAREN, "Expected ')'");
+		consume(token_type::LEFT_BRACE, "Expect '{' before " + s + " body.");
+		auto body = block();
+		return std::make_unique<Function<T>>(name, parameters, body); 
 	}
 	std::unique_ptr<Stmt<T>> print_statement()
 	{
@@ -131,6 +155,18 @@ private:
 		finally restore([&] {is_at_loop = 0;});
 		return body;
 	}
+	std::unique_ptr<Return_stmt<T>> return_statement()
+	{
+		token keyword = previous();
+		if (match(token_type::SEMICOLON)) {
+			std::unique_ptr<Expr<T>> expr = std::make_unique<Literal<T>>(nullptr);
+			return std::make_unique<Return_stmt<T>>(keyword, expr);
+		}
+		auto expr = expression();
+		consume(token_type::SEMICOLON, "Expected ';' after return statement.");
+		return std::make_unique<Return_stmt<T>>(keyword, expr);
+	}
+	
 	std::unique_ptr<Stmt<T>> statement()
 	{
 		/*if (match(token_type::BREAK)) {
@@ -139,6 +175,8 @@ private:
 			consume(token_type::SEMICOLON, "Expected ';'");
 			return std::make_unique<Break<T>>();
 			}*/
+		if (match(token_type::RETURN))
+			return return_statement();
 		if (match(token_type::WHILE))
 			return while_statement();
 		if (match(token_type::FOR))
@@ -154,6 +192,26 @@ private:
 		}
 		return expression_statement();
 	}
+
+	std::unique_ptr<Expr<T>> lambda()
+	{
+
+		consume(token_type::LEFT_PAREN, "Expected '(' after lambda expression");
+		std::vector<token> parameters;
+		if (!check(token_type::RIGHT_PAREN)) {
+			do {
+				if (parameters.size() >= 255)
+					error(peek(), "Can't have more than 255 parameters.");
+				parameters.push_back(consume(token_type::IDENTIFIER, "Expected identifier."));
+			} while (match(token_type::COMMA));
+		}
+		consume(token_type::RIGHT_PAREN, "Expected ')'");
+		consume(token_type::LEFT_BRACE, "Expect '{' before lambda body.");
+		auto body = block();
+		token name;
+		auto function = std::make_unique<Function<T>>(name, parameters, body);
+		return std::make_unique<Lambda<T>>(function);
+	}
 	
 	std::unique_ptr<Expr<T>> primary()
 	{
@@ -161,12 +219,16 @@ private:
 		if (match(token_type::FALSE)) return std::make_unique<Literal<T>>(false);
 		if (match(token_type::NIL)) return std::make_unique<Literal<T>>(nullptr);
 		if (match(token_type::STRING, token_type::NUMBER)) return std::make_unique<Literal<T>>(previous().literal);
+
 		if (match(token_type::LEFT_PAREN)) {
 			auto ret = expression(); //this is grouping<T>
 			consume(token_type::RIGHT_PAREN, "Expected ')' after expression.");
 //you want to match the '( token and consume it, else throw an exception
 			return ret;
 		}
+		if (match(token_type::FUN))
+			return lambda();
+
 		if (match(token_type::IDENTIFIER)) 
 			return std::make_unique<Variable<T>>(previous());
 		
@@ -174,6 +236,32 @@ private:
 		//above throws a std::exception, calling a function that calls
 		//lox::error and returns the exception
 	}
+
+	std::unique_ptr<Expr<T>> finish_call(std::unique_ptr<Expr<T>> &expr)
+	{
+		auto arguments = std::vector<std::unique_ptr<Expr<T>>>();
+		if (!check(token_type::RIGHT_PAREN)) {
+			do {
+				if (arguments.size() >= 255)
+					error(peek(), "Can't have more than 255 arguments");
+				arguments.push_back(std::move(expression()));
+			} while (match(token_type::COMMA));
+		}
+		auto right_paren = consume(token_type::RIGHT_PAREN, "Expected ')' after function call.");
+		
+		return std::make_unique<Call<T>>(expr, right_paren, arguments);
+	}
+	std::unique_ptr<Expr<T>> call()
+	{
+		auto expr = primary();
+		for (;;) {
+			if (match(token_type::LEFT_PAREN))
+				expr = finish_call(expr);
+			else break;
+		}
+		return expr;
+	}
+
 	std::unique_ptr<Expr<T>> unary()
 	{
 		std::unique_ptr<Expr<T>> expr;
@@ -184,7 +272,7 @@ private:
 			return std::make_unique<Unary<T>>(Operator, expr);
 		}
 
-		return primary();
+		return call();
 
 	}
 	std::unique_ptr<Expr<T>> factor()
@@ -285,17 +373,15 @@ private:
 	{
 		std::unique_ptr<Expr<T>> expr;
 		expr = assignment();
-
-		if (match(token_type::COMMA)) {
-			auto Operator = previous();
-			auto right = expression();
-			expr = std::make_unique<Binary<T>>(expr, Operator, right);
-		}
-
 		return expr;
 
 	}
 	parser_exception error(token token, const char *msg)
+	{
+		lox::error(token, msg);
+		return parser_exception();
+	}
+	parser_exception error(token token, std::string msg)
 	{
 		lox::error(token, msg);
 		return parser_exception();
@@ -327,6 +413,12 @@ private:
 		return tokens.at(current++);
 	}
 	token consume(token_type token, const char *msg)
+	{
+		if (check(token))
+			return advance();
+		throw(error(peek(), msg));
+	}
+	token consume(token_type token, std::string msg)
 	{
 		if (check(token))
 			return advance();

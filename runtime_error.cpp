@@ -9,6 +9,9 @@ struct runtime_exception : public std::exception {
 public:
 	runtime_exception(token &Token, std::string msg) :
 		Token(Token), msg(msg) {};
+	runtime_exception() {};
 
 };
+
+
 #endif

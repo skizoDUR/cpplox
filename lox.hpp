@@ -9,7 +9,7 @@
 #include "runtime_error.cpp"
 #include "scanner.hpp"
 #include "token_type.hpp"
-template<typename T>
+template <typename T>
 class interpreter;
 
 class lox {
