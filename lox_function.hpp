@@ -14,8 +14,8 @@ public:
 	environment closure;
 	int arity();
 
-	lox_function(Function<T> &declaration, environment &closure) :
-		declaration(declaration), closure(closure) {}
+	lox_function(Function<T> &declaration, environment *closure) :
+		declaration(declaration), closure(*closure) {}
 	lox_function<T> operator=(lox_function<T> &other)
 	{
 		this->declaration = other.declaration;

@@ -83,33 +83,32 @@ public:
 		stmt->accept(*this);
 		return {};
 	}
-	void execute_block(std::vector<std::unique_ptr<Stmt<T>>> &stmts, environment env)
+
+	void execute_block(std::vector<std::unique_ptr<Stmt<T>>> &stmts, environment &env)
 	{
-		environment previous = this->Environment;
-		env.enclosing = &previous;
-		this->Environment = env;
-		for (auto i = stmts.begin(); i != stmts.end(); i++)
-			execute(*i);
+		environment *previous = this->Environment;
+		this->Environment = &env;
 		finally restore_env([&] {
 					    this->Environment = previous;
 				    });
+		for (auto i = stmts.begin(); i != stmts.end(); i++)
+			execute(*i);
 	}
 
 	void execute_block(std::vector<std::shared_ptr<Stmt<T>>> &stmts, environment &env)
 	{
-		environment previous = this->Environment;
-		env.enclosing = &previous;
-		this->Environment = env;
-		for (auto i = stmts.begin(); i != stmts.end(); i++)
-			execute(*i);
+		environment *previous = this->Environment;
+		this->Environment = &env;
 		finally restore_env([&] {
 					    this->Environment = previous;
 				    });
+		for (auto i = stmts.begin(); i != stmts.end(); i++)
+			execute(*i);
 	}
 	//void execute(Stmt<T> &);
 public:
 	static inline environment globals;
-	static inline environment &Environment = globals;
+	static inline environment *Environment = &globals;
 	//statements
 	void visit(Stmt<T> &stmt) override
 	{
@@ -143,11 +142,12 @@ public:
 		std::any value = nullptr;
 		if (stmt.initializer.get())
 			value = evaluate(stmt.initializer);
-		Environment.define(stmt.name.lexeme, value);
+		Environment->define(stmt.name.lexeme, value);
 	}
 	void visit(Block<T> &stmt)
 	{
-		execute_block(stmt.statements, {});
+		auto env = environment(this->Environment);
+		execute_block(stmt.statements, env);
 	}
 	void visit(If<T> &stmt)
 	{
@@ -169,7 +169,7 @@ public:
 	void visit(Function<T> &stmt)
 	{
 		lox_function<T> function(stmt, Environment);
-		Environment.define(stmt.name.lexeme, function);
+		Environment->define(stmt.name.lexeme, function);
 	}
 	void visit(Return_stmt<T> &stmt)
 	{
@@ -280,12 +280,12 @@ public:
 
 	T visit(Variable<T> &expr)
 	{
-		return Environment.get(expr.name);
+		return Environment->get(expr.name);
 	}
 	T visit(Assign<T> &expr)
 	{
 		auto value = evaluate(expr.value);
-		Environment.assign(expr.name, value);
+		Environment->assign(expr.name, value);
 		return value;
 	}
 	T visit(Lambda<T> &expr)
