@@ -15,7 +15,7 @@ void environment::assign(token name, std::any value)
 	}
 	if (this->enclosing) {
 		this->enclosing->assign(name, value);
-		return; //unnecesary but more clear
+		return; 
 	}
 
 	throw runtime_exception(name, "Undefined variable '" + name.lexeme + "'.");
@@ -25,10 +25,30 @@ std::any environment::get(token &t)
 {
 	if (this->values.contains(t.lexeme))
 		return this->values[t.lexeme];
-
+	
 	if (this->enclosing)
 		return this->enclosing->get(t);
-		
+	
 	throw runtime_exception(t, "Undefined reference to " + t.lexeme + ".");
 }
 
+void environment::operator=(const environment &other)
+{
+	this->values = other.values;
+	this->enclosing = other.enclosing;
+}
+std::any environment::get_at(int distance, std::string name)
+{
+	return ancestor(distance).values[name];
+}
+environment &environment::ancestor(int distance)
+{
+	environment *node = this;
+	for (auto i = 0; i < distance; i++)
+		node = node->enclosing.get();
+	return *node;
+}
+void environment::assign_at(int distance, std::string name, std::any value)
+{
+	ancestor(distance).values[name] = value;
+}

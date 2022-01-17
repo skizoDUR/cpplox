@@ -1,41 +1,38 @@
 #ifndef LOX_INTERPRETER
 #define LOX_INTERPRETER
-#include <any>
-#include "cast_unique_ptr.cpp"
+#include "env_ptr.hpp"
 #include "environment.hpp"
 #include "expr.cpp"
+#include "lox_callable.hpp"
+#include "delete_pointer_vector.hpp"
 #include "stmt.hpp"
-#include "token.cpp"
 #include "token_type.hpp"
 #include "visitor.hpp"
 #include "runtime_error.cpp"
-#include "finally.cpp"
-#include "lox_function.hpp"
+#include "finally.hpp"
 #include "lox.hpp"
+#include "clock.hpp"
+#include "lox_function.hpp"
+#include "rand.hpp"
+#include "return.hpp"
+#include <stdexcept>
 #include <any>
-#include <vector>
-#include <iostream>
-
+#include <memory>
 class lox;
 
-struct Return : public runtime_exception {
-public:
-	Return(token &Token, std::string msg, std::any value) :
-		Token(Token), msg(msg), value(value) {}
-	token &Token;
-	std::string msg;
-	std::any value;
-};
-
+template <typename T>
+using statement_list = delete_pointer_vector<Stmt<T>>;
 
 template <typename T>
 class interpreter : public visitor<T> {
-public:
+private:
+
 	void check_number_operand(token &Operator, std::any &operand)
 	{
 		if (operand.type() == typeid(double))
 			return;
 		throw runtime_exception(Operator, "Operand must be a number");
+			
 	}
 	void check_number_operand(token &Operator, std::any &left, std::any &right)
 	{
@@ -45,11 +42,6 @@ public:
 	}
 	bool is_equal(std::any &left, std::any &right)
 	{
-		/*	if (left.type() == typeid(nullptr) && right.type() == typeid(nullptr))
-			return true;
-			if (right.type() == typeid(nullptr))
-			return false;
-		*/
 		if (left.type() != right.type())
 			return false;
 		if (left.type() == typeid(double))
@@ -69,54 +61,48 @@ public:
 			return std::any_cast<bool>(thing);
 		return true;
 	}
-	T evaluate(std::unique_ptr<Expr<T>> &expr)
+	
+	T evaluate(Expr<T> *expr)
 	{
-		return expr->accept(*this);
+		return expr->accept(this);
 	}
-	T execute(std::unique_ptr<Stmt<T>> &stmt)
+	T execute(Stmt<T> *stmt)
 	{
-		stmt->accept(*this);
+		stmt->accept(this);
 		return {};
 	}
-	T execute(std::shared_ptr<Stmt<T>> &stmt)
+	std::unordered_map<Expr<T> *, int> locals; 
+	std::any lookup_variable(token name, Expr<T> *expr)
 	{
-		stmt->accept(*this);
-		return {};
-	}
-
-	void execute_block(std::vector<std::unique_ptr<Stmt<T>>> &stmts, environment &env)
-	{
-		environment *previous = this->Environment;
-		this->Environment = &env;
-		finally restore_env([&] {
-					    this->Environment = previous;
-				    });
-		for (auto i = stmts.begin(); i != stmts.end(); i++)
-			execute(*i);
-	}
-
-	void execute_block(std::vector<std::shared_ptr<Stmt<T>>> &stmts, environment &env)
-	{
-		environment *previous = this->Environment;
-		this->Environment = &env;
-		finally restore_env([&] {
-					    this->Environment = previous;
-				    });
-		for (auto i = stmts.begin(); i != stmts.end(); i++)
-			execute(*i);
+		//std::cout << expr << " name : " << name.lexeme << '\n';
+		if (locals.contains(expr))
+			return Environment->get_at(locals[expr], name.lexeme);
+		return globals->get(name);
 	}
 	//void execute(Stmt<T> &);
 public:
-	static inline environment globals;
-	static inline environment *Environment = &globals;
 	//statements
-	void visit(Stmt<T> &stmt) override
-	{
-		evaluate(stmt.expression);
+	void execute_block(statement_list<T> &stmts, env_ptr env)
+ 	{
+		auto previous = this->Environment;
+		this->Environment = env;
+		finally (
+			this->Environment = previous;
+			)
+		for (auto i = stmts.begin(); i != stmts.end(); i++)
+			execute(*i);
 	}
-	void visit(Expression<T> &stmt)
+
+	env_ptr Environment = std::make_shared<environment>();
+	env_ptr globals = Environment;
+
+	void visit(Stmt<T> *stmt) override
 	{
-		auto result = evaluate(stmt.expression);
+		evaluate(stmt->expression);
+	}
+	void visit(Expression<T> *stmt) override
+	{
+		auto result = evaluate(stmt->expression);
 		if (lox::repl_mode)
 			print_any(result);
 	}
@@ -132,142 +118,161 @@ public:
  			else std::cout << "false\n";
  		}
 	}
-	void visit(Print<T> &stmt)
+	void visit(Print<T> *stmt) override
 	{
-		auto result = evaluate(stmt.expression);
+		auto result = evaluate(stmt->expression);
 		print_any(result);
 	}
-	void visit(Var<T> &stmt)
+	void visit(Var<T> *stmt) override
 	{
 		std::any value = nullptr;
-		if (stmt.initializer.get())
-			value = evaluate(stmt.initializer);
-		Environment->define(stmt.name.lexeme, value);
+		if (stmt->initializer)
+			value = evaluate(stmt->initializer);
+		Environment->define(stmt->name.lexeme, value);
 	}
-	void visit(Block<T> &stmt)
+ 	void visit(Block<T> *stmt) override
+ 	{
+ 		execute_block(stmt->statements, std::make_shared<environment>(Environment));
+ 	}
+	void visit(If<T> *stmt) override
 	{
-		auto env = environment(this->Environment);
-		execute_block(stmt.statements, env);
-	}
-	void visit(If<T> &stmt)
-	{
-		auto condition = evaluate(stmt.condition);
+		auto condition = evaluate(stmt->condition);
 		if (is_truthy(condition))
-			execute(stmt.Then);
-		else if (stmt.Else.get())
-			execute(stmt.Else);
+			execute(stmt->Then);
+		else if (stmt->Else)
+			execute(stmt->Else);
 	}
-	void visit(While<T> &stmt)
+	void visit(While<T> *stmt) override
 	{
-		auto condition = evaluate(stmt.condition);
-		while (is_truthy(condition)) {
-			execute(stmt.Then);
-			condition = evaluate(stmt.condition);
-		}
+		auto condition = evaluate(stmt->condition);
+			while (is_truthy(condition)) {
+				try {
+					execute(stmt->Then);
+				}
+				catch (Break<T> &) {
+					break;
+				}
+				condition = evaluate(stmt->condition);
+			}
 	}
-
-	void visit(Function<T> &stmt)
+	void visit(Break<T> *stmt) override
 	{
-		lox_function<T> function(stmt, Environment);
-		Environment->define(stmt.name.lexeme, function);
+		throw Break<T>();
 	}
-	void visit(Return_stmt<T> &stmt)
+	void visit(Function<T> *stmt) override
 	{
-		throw Return(stmt.keyword, {}, evaluate(stmt.value));
+		auto function = std::make_shared<lox_function<T>>(*stmt, Environment);
+		Environment->define(stmt->name.lexeme, std::static_pointer_cast<lox_callable<T>>(function));
+	}
+	void visit(Return<T> *stmt) override
+	{
+		std::any value;
+		if (stmt->value)
+			value = evaluate(stmt->value);
+		throw Return_value(value);
 	}
 	//expressions
-	T visit(Expr<T> &expr)
+	T visit(Expr<T> *expr) override
 	{
-		return expr.accept(*this);
+		return expr->accept(this);
 	}
-	T visit(Binary<T> &expr)
+	T visit(Binary<T> *expr) override
 	{
-		auto left = evaluate(expr.left);
-		auto right = evaluate(expr.right);
-		switch (expr.Operator.type) {
+		auto left = evaluate(expr->left);
+		auto right = evaluate(expr->right);
+/*		if (expr->Operator.type == token_type::PLUS) {
+			std::cout << std::any_cast<double>(left) << '+' <<
+				std::any_cast<double>(right) << '\n';
+
+		}
+*/
+		switch (expr->Operator.type) {
 		case token_type::BANG_EQUAL:
 			return !is_equal(left, right);
 		case token_type::EQUAL_EQUAL:
 			return is_equal(left, right);
 		case token_type::GREATER:
-			check_number_operand(expr.Operator, left, right);
+			check_number_operand(expr->Operator, left, right);
 			return std::any_cast<double>(left) > std::any_cast<double>(right);
 		case token_type::GREATER_EQUAL:
-			check_number_operand(expr.Operator, left, right);
+			check_number_operand(expr->Operator, left, right);
 			return std::any_cast<double>(left) >= std::any_cast<double>(right);
 		case token_type::LESS:
-			check_number_operand(expr.Operator, left, right);
+			check_number_operand(expr->Operator, left, right);
 			return std::any_cast<double>(left) < std::any_cast<double>(right);
 		case token_type::LESS_EQUAL:
-			check_number_operand(expr.Operator, left, right);
+			check_number_operand(expr->Operator, left, right);
 			return std::any_cast<double>(left) <= std::any_cast<double>(right);
 		case token_type::MINUS:
-			check_number_operand(expr.Operator, left, right);
+			check_number_operand(expr->Operator, left, right);
 			return std::any_cast<double>(left) - std::any_cast<double>(right);
 		case token_type::PLUS:
 			if (left.type() == typeid(double) && right.type() == typeid(double))
 				return std::any_cast<double>(left) + std::any_cast<double>(right);
 			if (left.type() == typeid(std::string) && right.type() == typeid(std::string))
 				return std::any_cast<std::string>(left) + std::any_cast<std::string>(right);
-			throw runtime_exception(expr.Operator, "Operands must be two numbers or two strings.");
+			throw runtime_exception(expr->Operator, "Operands must be two numbers or two strings.");
 		case token_type::SLASH:
-			check_number_operand(expr.Operator, left, right);
+			check_number_operand(expr->Operator, left, right);
 			if (std::any_cast<double>(right) == 0)
-				throw runtime_exception(expr.Operator, "Division by zero");
+				throw runtime_exception(expr->Operator, "Division by zero");
 			return std::any_cast<double>(left) / std::any_cast<double>(right);
 		case token_type::STAR:
-			check_number_operand(expr.Operator, left, right);
+			check_number_operand(expr->Operator, left, right);
 			return std::any_cast<double>(left) * std::any_cast<double>(right);
 		}
 		return {}; //never reached
 
 	}
-	T visit(Grouping<T> &expr)
+	T visit(Grouping<T> *expr) override
 	{
-		return evaluate(expr.expression);
+		return evaluate(expr->expression);
 	}
-	T visit(Literal<T> &expr)
+	T visit(Literal<T> *expr) override
 	{
-		return expr.value;
+		return expr->value;
 	}
-	T visit(Unary<T> &expr)
+	T visit(Increment<T> *expr) override
 	{
-		auto right = evaluate(expr.right);
-		switch (expr.Operator.type) {
+		auto get = Environment->get(expr->target_name);
+		double value;
+		try {
+			value = std::any_cast<double>(get);
+		}
+		catch (...) {
+			throw runtime_exception(expr->target_name, "Variable does not contain arithmetic type");
+		}
+		if (expr->Operator.type == token_type::INCREMENT) {
+			Environment->assign(expr->target_name, value + 1);
+			if (!expr->postfix)
+				return value + 1;
+		}
+		else {
+			Environment->assign(expr->target_name, value - 1);
+			if (!expr->postfix)
+				return value - 1;
+		}
+		return value;
+	}
+	T visit(Unary<T> *expr) override
+	{
+		auto right = evaluate(expr->right);
+		switch (expr->Operator.type) {
 		case token_type::MINUS:
-			check_number_operand(expr.Operator, right);
+			check_number_operand(expr->Operator, right);
 			return -std::any_cast<double>(right);
 			break;
 		case token_type::BANG:
 			return !is_truthy(right);
+			break;
 		}
 		return nullptr;
-	}
-	T visit(Call<T> &expr)
-	{
-		std::any callee = evaluate(expr.callee);
-		
-		try {
-			lox_function<T> function(std::any_cast<lox_function<T>>(callee));
-			std::vector<T> arguments;
-			for (auto &i : expr.arguments)
-				arguments.push_back(evaluate(i));
 
-			if ((int)arguments.size() != function.arity())
-				throw(runtime_exception(expr.paren, "Expected " + std::to_string(function.arity()) + " But got " + std::to_string(arguments.size())));
-						
-			return function.call(*this, arguments);
-		}
-
-		catch(std::bad_any_cast &) {
-			throw(runtime_exception(expr.paren, "Can only call functions and classes."));
-		}
-		return {};
 	}
-	T visit(Logical<T> &expr)
+	T visit(Logical<T> *expr) override
 	{
-		auto left = evaluate(expr.left);
-		if (expr.Operator.type == token_type::OR) {
+		auto left = evaluate(expr->left);
+		if (expr->Operator.type == token_type::OR) {
 			if (is_truthy(left))
 				return left;
 		}
@@ -275,33 +280,65 @@ public:
 			if (!is_truthy(left))
 				return left;
 		}
-		return evaluate(expr.right);
+		return evaluate(expr->right);
 	}
-
-	T visit(Variable<T> &expr)
+	T visit(Ternary<T> *expr) override
 	{
-		return Environment->get(expr.name);
+		auto condition = evaluate(expr->condition);
+		if (is_truthy(condition))
+			return evaluate(expr->then);
+		return evaluate(expr->_else);
 	}
-	T visit(Assign<T> &expr)
+	T visit(Variable<T> *expr) override
 	{
-		auto value = evaluate(expr.value);
-		Environment->assign(expr.name, value);
+		return lookup_variable(expr->name, expr);
+	}
+	T visit(Assign<T> *expr) override
+	{
+		auto value = evaluate(expr->value);
+		if (locals.contains(expr))
+			Environment->assign_at(locals[expr], expr->name.lexeme, value);
+		else
+			Environment->assign(expr->name, value);
 		return value;
 	}
-	T visit(Lambda<T> &expr)
+	T visit(Call<T> *expr) override
 	{
-		return lox_function<T>(*(expr.function), Environment);
+		using lox_callable_ptr = std::shared_ptr<lox_callable<T>>;
+		auto function_any = evaluate(expr->callee);
+		lox_callable_ptr function_call;
+		try {
+			function_call = std::any_cast<lox_callable_ptr>(function_any);
+		}
+		catch (...) {
+			throw runtime_exception(expr->paren, "Not callable expression");
+		}
+		if (function_call->arity() != (int)expr->arguments.size())
+			throw runtime_exception(expr->paren, "Mismatched function parameters");
+		std::vector<std::any> arg_list;
+		for (auto &i : expr->arguments)
+			arg_list.push_back(evaluate(i));
+		return function_call->call(*this, arg_list);
 	}
-	
+	void resolve(Expr<T> *expr, int depth)
+	{
+		std::cout << expr << " depth: " << depth << std::endl;
+		locals[expr] = depth;
+	}
+
 	interpreter()
 	{
-	};
-	~interpreter()  = default;
-	T interpret(std::vector<std::unique_ptr<Stmt<T>>> &stmts)
+		Environment->define("clock", (std::shared_ptr<lox_callable<T>>)std::make_shared<Clock<T>>());
+		Environment->define("rand", (std::shared_ptr<lox_callable<T>>)std::make_shared<Rand<T>>());
+	}
+	~interpreter() = default;
+
+	T interpret(statement_list<T> &stmts)
 	{
+
 		try {
-			for (auto i = stmts.begin(); i != stmts.end(); i++)
-				execute(*i);
+			for (auto &i : stmts)
+				execute(i);
 		} catch(runtime_exception &ex) {
 			lox::runtime_error(ex);
 		}
@@ -309,4 +346,5 @@ public:
 		return {};
 	}
 };
+
 #endif

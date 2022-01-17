@@ -1,18 +1,19 @@
 #ifndef PARSER_HPP
 #define PARSER_HPP
-#include "cast_unique_ptr.cpp"
 #include "lox.hpp"
 #include "expr.cpp"
 #include "token.cpp"
 #include "token_type.hpp"
 #include "stmt.hpp"
-#include "finally.cpp"
+#include "finally.hpp"
 #include <array>
 #include <exception>
 #include <vector>
-
+template <typename T>
+using statement_list = delete_pointer_vector<Stmt<T>>;
+template <typename T>
+using argument_t = delete_pointer_vector<Expr<T>>;
 struct parser_exception : public std::exception {token_type token; const char *msg;};
-
 
 template <typename T>
 class parser {
@@ -20,33 +21,47 @@ private:
 	std::vector<token> tokens;
 	int current = 0;
 	bool is_at_loop = 0;
-	std::unique_ptr<Stmt<T>> var_declaration()
+	Stmt<T> *var_declaration()
 	{
 		auto name = consume(token_type::IDENTIFIER, "Expected identifier name");
-		std::unique_ptr<Expr<T>> initializer = {}; //empty initializer
+		Expr<T> *initializer = nullptr; //empty initializer
 		if (match(token_type::EQUAL))
 			initializer = expression();
 		consume(token_type::SEMICOLON, "Expected ';' after variable declaration.");
-		return std::make_unique<Var<T>>(name, initializer);
+		return new Var<T>(name, initializer);
 	}
-	std::unique_ptr<Stmt<T>> declaration()
+	Stmt<T> *declaration()
 	{
 		try {
+			if (match(token_type::FUN))
+				return function_declaration("function");
 			if (match(token_type::VAR))
 				return var_declaration();
-			if (match(token_type::FUN)) {
-				if (check(token_type::IDENTIFIER))
-					return function("function");
-				current--; //go back to "fun"
-			}
-			
 			return statement();
 		} catch (parser_exception &error){
 			synchronize();
-			return {};
+			return nullptr;
 		}
 	}
-	std::unique_ptr<Stmt<T>> expression_statement()
+	Stmt<T> *function_declaration(std::string type) //TODO: type
+	{
+		auto identifier = consume(token_type::IDENTIFIER, "Expected identifier after function declaration");
+		std::vector<token> parameters;
+		consume(token_type::LEFT_PAREN, "Expected '(' after function declaration");
+		if (peek().type != token_type::RIGHT_PAREN) {
+			do {
+				if (parameters.size() >= 255)
+					error(peek(), "Can't have more than 255 parameters");
+				parameters.push_back(consume(token_type::IDENTIFIER, "Expected identifier"));
+			} while (match(token_type::COMMA));
+		}
+		consume(token_type::RIGHT_PAREN, "Expected ')' after function parameters");
+		consume(token_type::LEFT_BRACE, "Expected '{' before function body");
+		auto body = block();
+		return new Function<T>(identifier, parameters, body);
+		
+	}
+	Stmt<T> *expression_statement()
 	{
 		auto expr = expression();
 		if (!lox::repl_mode)
@@ -54,129 +69,102 @@ private:
 		else
 			match(token_type::SEMICOLON);
 		
-		return std::make_unique<Expression<T>>(expr);
-	}
-	
-	std::unique_ptr<Stmt<T>> function(std::string s)
-	{
-	
-		token name = consume(token_type::IDENTIFIER, "Expected " + s + " name.");
-		consume(token_type::LEFT_PAREN, "Expected '(' after " + s + " name.");
-		std::vector<token> parameters;
-		if (!check(token_type::RIGHT_PAREN)) {
-			do {
-				if (parameters.size() >= 255)
-					error(peek(), "Can't have more than 255 parameters.");
-				parameters.push_back(consume(token_type::IDENTIFIER, "Expected identifier."));
-			} while (match(token_type::COMMA));
-		}
-		consume(token_type::RIGHT_PAREN, "Expected ')'");
-		consume(token_type::LEFT_BRACE, "Expect '{' before " + s + " body.");
-		auto body = block();
-		return std::make_unique<Function<T>>(name, parameters, body); 
-	}
-	std::unique_ptr<Stmt<T>> print_statement()
-	{
-		auto expr = expression();
-		consume(token_type::SEMICOLON, "Expected ';'");
-		//return std::make_unique<Stmt<T>>(Print<T>(expr));
-		return std::make_unique<Print<T>>(expr);
-	}
-	std::vector<std::unique_ptr<Stmt<T>>> block()
-	{
-		std::vector<std::unique_ptr<Stmt<T>>> statements;
-	
-		while (!check(token_type::RIGHT_BRACE) && !is_at_end())
-			statements.push_back(declaration());
-		consume(token_type::RIGHT_BRACE, "Expected }");
-		return statements;
+		return new Expression<T>(expr);
 
 	}
-	std::unique_ptr<Stmt<T>> if_statement()
+	Stmt<T> *print_statement()
+	{
+		auto expr = expression();
+		if (!lox::repl_mode)
+			consume(token_type::SEMICOLON, "Expected ';'");
+		else {
+			match(token_type::SEMICOLON);
+		}
+		return new Print<T>(expr);
+	}
+ 	statement_list<T> block()
+ 	{
+ 		statement_list<T> statements;
+ 		while (!check(token_type::RIGHT_BRACE) && !is_at_end())
+			statements.push_back(declaration());
+ 		consume(token_type::RIGHT_BRACE, "Expected }");
+		return statements;
+ 	}
+	Stmt<T> *if_statement()
 	{
 		consume(token_type::LEFT_PAREN, "'(' Expected after if.");
-		std::unique_ptr<Expr<T>> condition = expression();
+		Expr<T> *condition = expression();
 		consume(token_type::RIGHT_PAREN, "')' Expected after condition.");
-		std::unique_ptr<Stmt<T>> then = statement();
-		std::unique_ptr<Stmt<T>> else_;
+		Stmt<T> *then = statement();
+		Stmt<T> *else_ = nullptr;
 		if (match(token_type::ELSE))
 			else_ = statement();
-		return std::make_unique<If<T>>(condition, then, else_);
+		return new If<T>(condition, then, else_);
 	}
-	std::unique_ptr<Stmt<T>> while_statement()
-	{
-		is_at_loop = 1;
-		consume(token_type::LEFT_PAREN, "'(' Expected after while.");
-		std::unique_ptr<Expr<T>> condition = expression();
-		consume(token_type::RIGHT_PAREN, "')' Expected after condition.");
-		std::unique_ptr<Stmt<T>> then = statement();
-		finally restore([&] {is_at_loop = 0;});
-		return std::make_unique<While<T>>(condition, then);
-	}
-	std::unique_ptr<Stmt<T>> for_statement()
+ 	Stmt<T> *while_statement()
+ 	{
+ 		is_at_loop = 1;
+ 		consume(token_type::LEFT_PAREN, "'(' Expected after while.");
+ 		Expr<T> *condition = expression();
+ 		consume(token_type::RIGHT_PAREN, "')' Expected after condition.");
+ 		Stmt<T> *then = statement();
+ 		finally (
+			is_at_loop = 0;
+			)
+ 		return new While<T>(condition, then);
+ 	}
+	Stmt<T> *for_statement()
 	{
 		is_at_loop = 1;
 		consume(token_type::LEFT_PAREN, "'(' Expected after for.");
-		std::unique_ptr<Stmt<T>> initializer;
+		Stmt<T> *initializer = nullptr;
 		if (!match(token_type::SEMICOLON)) { //basically consumes for (; ...)
 			if (match(token_type::VAR))
 				initializer = var_declaration();
 			else initializer = expression_statement();
 		}
-		std::unique_ptr<Expr<T>> condition;
-		if (!match(token_type::SEMICOLON)) { //gets rid of for (; ; ...)
+		Expr<T> *condition = nullptr;
+		if (!match(token_type::SEMICOLON)) { //gets rid of for (something;  ; ...)
 			condition = expression();
 			consume(token_type::SEMICOLON, "Expected ';' after loop condition.");
 		}
 		
-		std::unique_ptr<Expr<T>> increase; //i++ ..
+		Expr<T> *increase = nullptr; //i++ ..
 		if (!match(token_type::RIGHT_PAREN)) {
 			increase = expression();
 			consume(token_type::RIGHT_PAREN, "Expected ')' after for clauses.");
 		}
 		
-		std::unique_ptr<Stmt<T>> body = statement();
-		if (increase.get()) {
-			std::vector<std::unique_ptr<Stmt<T>>> tmp;
-			tmp.push_back(std::move(body));
-			tmp.push_back(std::make_unique<Expression<T>>(increase));
-			body = std::make_unique<Block<T>>(tmp);
+		Stmt<T> *body = statement();
+		if (increase) {
+			statement_list<T> tmp;
+			tmp.push_back(body);
+			tmp.push_back(new Expression<T>(increase));
+			body = new Block<T>(tmp);
 		}
-		if (!condition.get()) condition = std::make_unique<Literal<T>>(true);
-		body = std::make_unique<While<T>>(condition, body);
-
-		if (initializer.get()) { //there's an initializer
-			std::vector<std::unique_ptr<Stmt<T>>> tmp;
-			tmp.push_back(std::move(initializer));
-			tmp.push_back(std::move(body));
-			body = std::make_unique<Block<T>>(tmp);
+		if (!condition)
+			condition = new Literal<T>(true);
+ 
+		body = new While<T>(condition, body);
+ 
+		if (initializer) { //there's an initializer
+			statement_list<T> tmp;
+			tmp.push_back(initializer);
+			tmp.push_back(body);
+			body = new Block<T>(tmp);
 		}
 		//we add the initializer to the beginning of the loop
-		finally restore([&] {is_at_loop = 0;});
+		finally (
+			is_at_loop = 0;
+			)
 		return body;
 	}
-	std::unique_ptr<Return_stmt<T>> return_statement()
+	Stmt<T> *statement()
 	{
-		token keyword = previous();
-		if (match(token_type::SEMICOLON)) {
-			std::unique_ptr<Expr<T>> expr = std::make_unique<Literal<T>>(nullptr);
-			return std::make_unique<Return_stmt<T>>(keyword, expr);
-		}
-		auto expr = expression();
-		consume(token_type::SEMICOLON, "Expected ';' after return statement.");
-		return std::make_unique<Return_stmt<T>>(keyword, expr);
-	}
-	
-	std::unique_ptr<Stmt<T>> statement()
-	{
-		/*if (match(token_type::BREAK)) {
-			if (!is_at_loop)
-				throw (error(previous(), "Break used outside of loop"));
-			consume(token_type::SEMICOLON, "Expected ';'");
-			return std::make_unique<Break<T>>();
-			}*/
 		if (match(token_type::RETURN))
 			return return_statement();
+		if (match(token_type::BREAK))
+			return break_statement();
 		if (match(token_type::WHILE))
 			return while_statement();
 		if (match(token_type::FOR))
@@ -185,203 +173,194 @@ private:
 			return if_statement();
 		if (match(token_type::PRINT))
 			return print_statement();
-		if (match(token_type::LEFT_BRACE)) {
-			std::vector<std::unique_ptr<Stmt<T>>> get = block();
-			return std::make_unique<Block<T>>(get);
-			
+ 		if (match(token_type::LEFT_BRACE)) {
+ 			statement_list<T> get = block();
+ 			return new Block<T>(get);
 		}
 		return expression_statement();
 	}
-
-	std::unique_ptr<Expr<T>> lambda()
+	Stmt<T> *return_statement()
 	{
-
-		consume(token_type::LEFT_PAREN, "Expected '(' after lambda expression");
-		std::vector<token> parameters;
-		if (!check(token_type::RIGHT_PAREN)) {
-			do {
-				if (parameters.size() >= 255)
-					error(peek(), "Can't have more than 255 parameters.");
-				parameters.push_back(consume(token_type::IDENTIFIER, "Expected identifier."));
-			} while (match(token_type::COMMA));
-		}
-		consume(token_type::RIGHT_PAREN, "Expected ')'");
-		consume(token_type::LEFT_BRACE, "Expect '{' before lambda body.");
-		auto body = block();
-		token name;
-		auto function = std::make_unique<Function<T>>(name, parameters, body);
-		return std::make_unique<Lambda<T>>(function);
+		auto keyword = previous();
+		Expr<T> *value = nullptr;
+		if (!check(token_type::SEMICOLON))
+			value = expression();
+		consume(token_type::SEMICOLON, "Expected ';' after return");
+		return new Return<T>(keyword, value);
 	}
-	
-	std::unique_ptr<Expr<T>> primary()
+	Stmt<T> *break_statement()
 	{
-		if (match(token_type::TRUE)) return std::make_unique<Literal<T>>(true);
-		if (match(token_type::FALSE)) return std::make_unique<Literal<T>>(false);
-		if (match(token_type::NIL)) return std::make_unique<Literal<T>>(nullptr);
-		if (match(token_type::STRING, token_type::NUMBER)) return std::make_unique<Literal<T>>(previous().literal);
-
+		if (!is_at_loop)
+			throw (error(previous(), "Break used outside of loop"));
+		consume(token_type::SEMICOLON, "Expected ';'");
+		return new Break<T>();
+	}
+	bool is_increment()
+	{
+		return match(token_type::INCREMENT, token_type::DECREMENT);
+	}
+	Expr<T> *primary()
+	{
+		if (match(token_type::TRUE)) return new Literal<T>(true);
+		if (match(token_type::FALSE)) return new Literal<T>(false);
+		if (match(token_type::NIL)) return new Literal<T>(nullptr);
+		if (match(token_type::STRING, token_type::NUMBER)) return new Literal<T>(previous().literal);
 		if (match(token_type::LEFT_PAREN)) {
 			auto ret = expression(); //this is grouping<T>
 			consume(token_type::RIGHT_PAREN, "Expected ')' after expression.");
-//you want to match the '( token and consume it, else throw an exception
+			//you want to match the ')' token and consume it, else throw an exception
 			return ret;
 		}
-		if (match(token_type::FUN))
-			return lambda();
-
-		if (match(token_type::IDENTIFIER)) 
-			return std::make_unique<Variable<T>>(previous());
+		if (match(token_type::IDENTIFIER))
+			return new Variable<T>(previous());
 		
 		throw(error(peek(), "Expected expression "));
 		//above throws a std::exception, calling a function that calls
 		//lox::error and returns the exception
 	}
-
-	std::unique_ptr<Expr<T>> finish_call(std::unique_ptr<Expr<T>> &expr)
+	Expr<T> *increment_expr(token Operator, Expr<T> *target, bool postfix)
 	{
-		auto arguments = std::vector<std::unique_ptr<Expr<T>>>();
+		auto ret = dynamic_cast<Variable<T>*>(target);
+		if (!ret)
+			throw error(Operator, "Invalid increment expression");
+		return new Increment<T>(ret->name, Operator, postfix);
+	}
+	Expr<T> *finish_call(Expr<T> *callee)
+	{
+		argument_t<T> arguments;
 		if (!check(token_type::RIGHT_PAREN)) {
 			do {
-				if (arguments.size() >= 255)
-					error(peek(), "Can't have more than 255 arguments");
-				arguments.push_back(std::move(expression()));
+				arguments.push_back(expression());
 			} while (match(token_type::COMMA));
 		}
-		auto right_paren = consume(token_type::RIGHT_PAREN, "Expected ')' after function call.");
-		
-		return std::make_unique<Call<T>>(expr, right_paren, arguments);
+		consume(token_type::RIGHT_PAREN, "Expected ')' after function call");
+		return new Call<T>(callee, previous(), arguments);
 	}
-	std::unique_ptr<Expr<T>> call()
+	Expr<T> *postfix()
 	{
 		auto expr = primary();
-		for (;;) {
-			if (match(token_type::LEFT_PAREN))
-				expr = finish_call(expr);
-			else break;
-		}
+		if (match(token_type::INCREMENT, token_type::DECREMENT))
+			return increment_expr(previous(), expr, true);
+		while (match(token_type::LEFT_PAREN))
+			expr = finish_call(expr);
+		
 		return expr;
 	}
 
-	std::unique_ptr<Expr<T>> unary()
+	Expr<T> *unary()
 	{
-		std::unique_ptr<Expr<T>> expr;
-
 		if (match(token_type::BANG, token_type::MINUS)) {
 			token Operator = previous();
 			auto expr = unary();
-			return std::make_unique<Unary<T>>(Operator, expr);
+			return new Unary<T>(Operator, expr);
 		}
-
-		return call();
-
+		if (match(token_type::INCREMENT, token_type::DECREMENT)) {
+			auto Operator = previous();
+			return increment_expr(Operator, primary(), false);
+		}
+		
+		return postfix();
 	}
-	std::unique_ptr<Expr<T>> factor()
+	Expr<T> *factor()
 	{
-		std::unique_ptr<Expr<T>> expr = unary();
+		Expr<T> *expr = unary();
 	
 		while (match(token_type::SLASH, token_type::STAR)) {
 			token Operator = previous();
 			auto right = unary();
-			expr = std::make_unique<Binary<T>>(expr, Operator, right);
+			expr = new Binary<T>(expr, Operator, right);
 		}
 		return expr;
 
 	}
-	std::unique_ptr<Expr<T>> term()
+	Expr<T> *term()
 	{
 		auto expr = factor();
 		while (match(token_type::MINUS, token_type::PLUS)) {
 			token Operator = previous();
 			auto right = factor();
-			expr = std::make_unique<Binary<T>>(expr, Operator, right);
+			expr = new Binary<T>(expr, Operator, right);
 		}
 		return expr;
 
 	}
-	std::unique_ptr<Expr<T>> comparison()
+	Expr<T> *comparison()
 	{
 		auto expr = term();
 		while (match(token_type::GREATER, token_type::GREATER_EQUAL, token_type::LESS, token_type::LESS_EQUAL)) {
 			token Operator = previous();
 			auto right = term();
-			expr = std::make_unique<Binary<T>>(expr, Operator, right);
+			expr = new Binary<T>(expr, Operator, right);
 		}
-
-		if (match(token_type::QUESTION)) {
-			auto question = previous();
-			auto left = expression();
-			consume(token_type::COLON, "Expected ':'.");
-			auto colon = previous();
-			auto right = expression();
-			std::unique_ptr<Expr<T>> tmp = std::make_unique<Binary<T>>(left, colon, right);
-			expr = std::make_unique<Binary<T>>(expr, question, tmp);
-		}
-
 		return expr;
-
 	}
-	std::unique_ptr<Expr<T>> equality()
+	Expr<T> *equality()
 	{
 		auto expr = comparison();
 		while (match(token_type::EQUAL_EQUAL, token_type::BANG_EQUAL)) {
 			auto Operator = previous();
 			auto right = comparison();
-			expr = std::make_unique<Binary<T>>(expr, Operator, right);
-			//new binary expression, previous expr, (!= | ==) right expr
+			expr = new Binary<T>(expr, Operator, right);
 		}
 	
 		return expr;
 
 	}
-	std::unique_ptr<Expr<T>> and_()
+	Expr<T> *and_()
 	{
 		auto expr = equality();
 		if (match(token_type::AND)) {
 			auto Operator = previous();
 			auto right = expression();
-			expr = std::make_unique<Logical<T>>(expr, Operator, right);
+			expr = new Logical<T>(expr, Operator, right);
 		}
 		return expr;
 	}
-	std::unique_ptr<Expr<T>> or_()
+	Expr<T> *or_()
 	{
 		auto expr = and_();
 		if (match(token_type::OR)) {
 			auto Operator = previous();
 			auto right = expression();
-			expr = std::make_unique<Logical<T>>(expr, Operator, right);
+			expr = new Logical<T>(expr, Operator, right);
 		}
 		return expr;
 	}
-	std::unique_ptr<Expr<T>> assignment()
+	Expr<T> *ternary()
 	{
-		auto expr = or_();
+		//the ternary operator '?'
+		auto condition = or_();
+		if (match(token_type::QUESTION)) {
+			auto Then = expression();
+			consume(token_type::COLON, "Expected ':' after ternary expression");
+			auto Else = ternary();
+			return new Ternary<T>(condition, Then, Else);
+		}
+		return condition;
+	}
+	Expr<T> *assignment()
+	{
+		Expr<T> *expr = ternary();
 		if (match(token_type::EQUAL)) {
 			token equals = previous();
 			auto value = assignment();
-			auto target = cast_unique_ptr<Variable<T>>(expr); //left hand side
-			if (target.get()) {
+			try {
+				auto target = dynamic_cast<Variable<T>*>(expr);
 				token name = target->name;
-				return std::make_unique<Assign<T>>(name, value);
+				return new Assign<T>(name, value);
 			}
-			error(equals, "Invalid assignment target.");
+			catch (...) {
+				error(equals, "Invalid assignment target.");
+			}
 		}
 		return expr;
-
 	}
-	std::unique_ptr<Expr<T>> expression()
+	Expr<T> *expression()
 	{
-		std::unique_ptr<Expr<T>> expr;
-		expr = assignment();
+		Expr<T> *expr = assignment();
 		return expr;
-
 	}
 	parser_exception error(token token, const char *msg)
-	{
-		lox::error(token, msg);
-		return parser_exception();
-	}
-	parser_exception error(token token, std::string msg)
 	{
 		lox::error(token, msg);
 		return parser_exception();
@@ -413,12 +392,6 @@ private:
 		return tokens.at(current++);
 	}
 	token consume(token_type token, const char *msg)
-	{
-		if (check(token))
-			return advance();
-		throw(error(peek(), msg));
-	}
-	token consume(token_type token, std::string msg)
 	{
 		if (check(token))
 			return advance();
@@ -457,18 +430,18 @@ private:
 public:
 	parser(std::vector<token> &tokens) : tokens(tokens) {};
 	parser() {};
-	std::vector<std::unique_ptr<Stmt<T>>> parse()
+	statement_list<T> parse()
 	{
-		std::vector<std::unique_ptr<Stmt<T>>> ret;
+		statement_list<T> ret;
+		
 		while (!is_at_end()) {
 			try {
-				ret.push_back(std::move(declaration()));
+				ret.push_back(declaration());
 			}
 			catch (...) { //catch parser_exception
 				return {};
 			}
 		}
-		
 		return ret;
 	}
 };

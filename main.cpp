@@ -15,5 +15,4 @@ int main(int argc, char **argv)
 		lox::repl_mode = 1;
 		lox::run_prompt();
 	}
-		
 }

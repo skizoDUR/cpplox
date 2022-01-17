@@ -12,13 +12,11 @@ public:
 	std::string lexeme;
 	std::any literal;
 	int line;
-
 	token() {}
-	
 	token(token_type type, std::string lexeme, double literal, int line)
-		: type(type), lexeme(lexeme), literal(literal), line(line) {};
+		: type(type), lexeme(lexeme), literal(literal), line(line) {}
 	token(token_type type, std::string lexeme, std::string literal, int line)
-		: type(type), lexeme(lexeme), literal(literal), line(line) {};
+		: type(type), lexeme(lexeme), literal(literal), line(line) {}
 	//friend std::ostream &operator<<(std::ostream &, const token &);
 	
 	friend std::ostream &operator<<(std::ostream &os, const token &t)

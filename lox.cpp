@@ -1,6 +1,9 @@
 #include "lox.hpp"
 #include "interpreter.hpp"
 #include "parser.hpp"
+#include "resolver.hpp"
+template <typename T>
+using statement_list = delete_pointer_vector<Stmt<T>>;
 
 bool lox::had_error = 0;
 bool lox::had_runtime_error = 0;
@@ -12,10 +15,11 @@ void lox::run(std::string source)
 	scanner scan(source);
 	std::vector<token> tokens = scan.scan_tokens();
 	parser<std::any> Parser(tokens);
-	auto statements = Parser.parse();
+	statement_list<std::any> statements(Parser.parse());
 	if (lox::had_error || lox::had_runtime_error)
 		return;
-	
+	Resolver<std::any> resolver(Interpreter);
+	resolver.resolve(statements);
 	lox::Interpreter.interpret(statements);
 }
 
@@ -70,4 +74,3 @@ void lox::runtime_error(runtime_exception error)
 	std::cerr << "[line " << error.Token.line << "] " << error.msg << '\n';
 	lox::had_runtime_error = 1;
 }
-

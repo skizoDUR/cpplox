@@ -8,10 +8,7 @@ struct runtime_exception : public std::exception {
 	std::string msg;
 public:
 	runtime_exception(token &Token, std::string msg) :
-		Token(Token), msg(msg) {};
-	runtime_exception() {};
+		Token(Token), msg(msg) {}
 
 };
-
-
 #endif

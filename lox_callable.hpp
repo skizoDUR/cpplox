@@ -1,15 +1,14 @@
 #ifndef LOX_CALLABLE_HPP
 #define LOX_CALLABLE_HPP
-#include <any>
 #include <vector>
-#include "interpreter.hpp"
-template <typename T>
+template <class T>
+class interpreter;
+
+template <class T>
 class lox_callable {
 public:
-	lox_callable() = default;
+	virtual int arity() {return 0;};
+	virtual T call(interpreter<T> &interpreter, std::vector<T> &arguments) {return {};};
 	virtual ~lox_callable() = default;
-	virtual T call(interpreter<T> &interpreter, std::vector<T> &arguments);
-	virtual int arity() {};
 };
-
 #endif
