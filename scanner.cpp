@@ -138,8 +138,12 @@ void scanner::scan_token()
 	case '}': add_token(token_type::RIGHT_BRACE); break;
 	case ',': add_token(token_type::COMMA); break;
 	case '.': add_token(token_type::DOT); break;
-	case '-': add_token(token_type::MINUS); break;
-	case '+': add_token(token_type::PLUS); break;
+	case '-':
+		add_token(match('-') ? token_type::DECREMENT : token_type::MINUS);
+		break;
+	case '+':
+		add_token(match('+') ? token_type::INCREMENT : token_type::PLUS);
+		break;
 	case ';': add_token(token_type::SEMICOLON); break;
 	case '*': add_token(token_type::STAR); break;
 	case '?': add_token(token_type::QUESTION); break;
