@@ -10,6 +10,11 @@ bool lox::had_runtime_error = 0;
 bool lox::repl_mode = 0;
 interpreter<std::any> lox::Interpreter;
 
+lox::lox()
+{
+	std::ios_base::sync_with_stdio(false);
+}
+
 void lox::run(std::string source)
 {
 	scanner scan(source);

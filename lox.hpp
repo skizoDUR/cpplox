@@ -25,5 +25,6 @@ public:
 	static void error(int, std::string);
 	static void error(token, std::string);
 	static void runtime_error(runtime_exception);
+	lox();
 };
 #endif

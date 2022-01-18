@@ -161,7 +161,8 @@ public:
 	}
 	void visit(Function<T> *stmt) override
 	{
-		auto function = std::make_shared<lox_function<T>>(*stmt, Environment);
+		auto function = std::make_shared<lox_function<T>>(*stmt, *Environment);
+		function->closure = *Environment;
 		Environment->define(stmt->name.lexeme, std::static_pointer_cast<lox_callable<T>>(function));
 	}
 	void visit(Return<T> *stmt) override
@@ -319,13 +320,13 @@ public:
 		for (auto &i : expr->arguments)
 			arg_list.push_back(evaluate(i));
 		return function_call->call(*this, arg_list);
+		
 	}
 	void resolve(Expr<T> *expr, int depth)
 	{
 		std::cout << expr << " depth: " << depth << std::endl;
 		locals[expr] = depth;
 	}
-
 	interpreter()
 	{
 		Environment->define("clock", (std::shared_ptr<lox_callable<T>>)std::make_shared<Clock<T>>());

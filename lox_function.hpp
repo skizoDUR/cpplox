@@ -12,9 +12,9 @@
 template<typename T>
 struct lox_function final : public lox_callable<T> {
 	Function<T> &declaration;
-	env_ptr closure;
-	lox_function(Function<T> *declaration, env_ptr &closure) : declaration(declaration), closure(closure) {}
-	lox_function(Function<T> &declaration, env_ptr &closure) : declaration(declaration), closure(closure) {}
+	environment closure;
+	lox_function(Function<T> *declaration, environment &closure) : declaration(declaration), closure(closure) {}
+	lox_function(Function<T> &declaration, environment &closure) : declaration(declaration), closure(closure) {}
 	int arity() override
 	{
 		return declaration.params.size();
@@ -34,6 +34,7 @@ struct lox_function final : public lox_callable<T> {
 		return {};
 	}
 	~lox_function() override = default;
+	      
 };
 
 #endif
