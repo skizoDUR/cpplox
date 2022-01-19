@@ -45,7 +45,7 @@ environment &environment::ancestor(int distance)
 {
 	environment *node = this;
 	for (auto i = 0; i < distance; i++)
-		node = node->enclosing.get();
+		node = node->enclosing;
 	return *node;
 }
 void environment::assign_at(int distance, std::string name, std::any value)

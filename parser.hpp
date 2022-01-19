@@ -203,7 +203,7 @@ private:
 	{
 		if (match(token_type::TRUE)) return new Literal<T>(true);
 		if (match(token_type::FALSE)) return new Literal<T>(false);
-		if (match(token_type::NIL)) return new Literal<T>(nullptr);
+		if (match(token_type::NIL)) return new Literal<T>();
 		if (match(token_type::STRING, token_type::NUMBER)) return new Literal<T>(previous().literal);
 		if (match(token_type::LEFT_PAREN)) {
 			auto ret = expression(); //this is grouping<T>
