@@ -82,7 +82,7 @@ private:
 	//void execute(Stmt<T> &);
 public:
 	//statements
-	void execute_block(statement_list<T> &stmts, env_ptr env)
+	void execute_block(statement_list<T> &stmts, environment *env)
  	{
 		auto previous = this->Environment;
 		this->Environment = env;
@@ -93,8 +93,8 @@ public:
 			execute(*i);
 	}
 
-	env_ptr Environment = std::make_shared<environment>();
-	env_ptr globals = Environment;
+	environment *Environment = new environment();
+	environment *globals = Environment;
 
 	void visit(Stmt<T> *stmt) override
 	{
@@ -132,7 +132,8 @@ public:
 	}
  	void visit(Block<T> *stmt) override
  	{
- 		execute_block(stmt->statements, std::make_shared<environment>(Environment));
+		environment env(Environment);
+ 		execute_block(stmt->statements, &env);
  	}
 	void visit(If<T> *stmt) override
 	{
@@ -159,11 +160,14 @@ public:
 	{
 		throw Break<T>();
 	}
+	std::vector<std::unique_ptr<lox_callable<T>>> functions;
 	void visit(Function<T> *stmt) override
 	{
-		auto function = std::make_shared<lox_function<T>>(*stmt, *Environment);
-		function->closure = *Environment;
-		Environment->define(stmt->name.lexeme, std::static_pointer_cast<lox_callable<T>>(function));
+		functions.push_back(std::make_unique<lox_function<T>>(*stmt, *Environment));
+		Environment->define(stmt->name.lexeme, (lox_callable<T>*)functions.back().get());
+		auto set_closure = static_cast<lox_function<T>*>(functions.back().get());
+		delete set_closure->closure;
+		set_closure->closure = new environment(*Environment);
 	}
 	void visit(Return<T> *stmt) override
 	{
@@ -181,12 +185,6 @@ public:
 	{
 		auto left = evaluate(expr->left);
 		auto right = evaluate(expr->right);
-/*		if (expr->Operator.type == token_type::PLUS) {
-			std::cout << std::any_cast<double>(left) << '+' <<
-				std::any_cast<double>(right) << '\n';
-
-		}
-*/
 		switch (expr->Operator.type) {
 		case token_type::BANG_EQUAL:
 			return !is_equal(left, right);
@@ -305,11 +303,10 @@ public:
 	}
 	T visit(Call<T> *expr) override
 	{
-		using lox_callable_ptr = std::shared_ptr<lox_callable<T>>;
 		auto function_any = evaluate(expr->callee);
-		lox_callable_ptr function_call;
+		lox_callable<T> *function_call;
 		try {
-			function_call = std::any_cast<lox_callable_ptr>(function_any);
+			function_call = std::any_cast<lox_callable<T>*>(function_any);
 		}
 		catch (...) {
 			throw runtime_exception(expr->paren, "Not callable expression");
@@ -319,8 +316,7 @@ public:
 		std::vector<std::any> arg_list;
 		for (auto &i : expr->arguments)
 			arg_list.push_back(evaluate(i));
-		return function_call->call(*this, arg_list);
-		
+		return function_call->call(*this, arg_list);		
 	}
 	void resolve(Expr<T> *expr, int depth)
 	{
@@ -329,10 +325,15 @@ public:
 	}
 	interpreter()
 	{
-		Environment->define("clock", (std::shared_ptr<lox_callable<T>>)std::make_shared<Clock<T>>());
-		Environment->define("rand", (std::shared_ptr<lox_callable<T>>)std::make_shared<Rand<T>>());
+		functions.push_back(std::make_unique<Clock<T>>());
+		Environment->define("clock", (lox_callable<T>*)functions.back().get());
+		functions.push_back(std::make_unique<Rand<T>>());
+		Environment->define("rand", (lox_callable<T>*)functions.back().get());
 	}
-	~interpreter() = default;
+	~interpreter()
+	{
+		delete this->Environment;
+	}
 
 	T interpret(statement_list<T> &stmts)
 	{

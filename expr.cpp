@@ -149,6 +149,7 @@ public:
 		this->value = other->value;
 	}
 	Literal(std::any value) : value(value) {}
+	Literal() {}
 	virtual ~Literal() override = default;
 };
 

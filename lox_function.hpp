@@ -12,18 +12,20 @@
 template<typename T>
 struct lox_function final : public lox_callable<T> {
 	Function<T> &declaration;
-	environment closure;
-	lox_function(Function<T> *declaration, environment &closure) : declaration(declaration), closure(closure) {}
-	lox_function(Function<T> &declaration, environment &closure) : declaration(declaration), closure(closure) {}
+	environment *closure = nullptr;
+	lox_function(Function<T> &declaration, environment &closure) : declaration(declaration), closure(new environment(closure)) {}
 	int arity() override
 	{
 		return declaration.params.size();
 	}
 	T call(interpreter<T> &interpreter, std::vector<T> &arguments) override
 	{
-		auto Environment = std::make_shared<environment>(closure);
+		auto Environment = new environment(closure);
 		for (int i = 0; i < (int)declaration.params.size(); i++)
 			Environment->define(declaration.params[i].lexeme, arguments[i]);
+		finally (
+			delete Environment;
+			)
 		try {
 			interpreter.execute_block(declaration.body, Environment);
 		}
@@ -33,7 +35,10 @@ struct lox_function final : public lox_callable<T> {
 		
 		return {};
 	}
-	~lox_function() override = default;
+	~lox_function() override
+	{
+		delete this->closure;
+	}
 	      
 };
 
