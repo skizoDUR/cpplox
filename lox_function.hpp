@@ -24,7 +24,6 @@ struct lox_function final : public lox_callable<T> {
 		for (int i = 0; i < (int)declaration.params.size(); i++)
 			Environment->define(declaration.params[i].lexeme, arguments[i]);
 		finally (
-
 			delete Environment;
 			)
 		try {
@@ -33,7 +32,6 @@ struct lox_function final : public lox_callable<T> {
 		catch (Return_value &ret) {
 			return ret.value;
 		}
-		
 		return {};
 	}
 	~lox_function() override

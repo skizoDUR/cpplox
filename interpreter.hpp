@@ -18,6 +18,11 @@
 #include <stdexcept>
 #include <any>
 #include <memory>
+#include <string>
+#include <vector>
+#include <iostream>
+#include <typeinfo>
+
 class lox;
 
 template <typename T>
@@ -82,7 +87,7 @@ private:
 	//void execute(Stmt<T> &);
 public:
 	//statements
-	void execute_block(statement_list<T> &stmts, environment *env)
+	void execute_block(std::vector<std::unique_ptr<Stmt<T>>>  &stmts, environment *env)
  	{
 		auto previous = this->Environment;
 		this->Environment = env;
@@ -90,7 +95,7 @@ public:
 			this->Environment = previous;
 			)
 		for (auto i = stmts.begin(); i != stmts.end(); i++)
-			execute(*i);
+			execute(i->get());
 	}
 
 	environment *Environment = new environment();
@@ -98,11 +103,11 @@ public:
 
 	void visit(Stmt<T> *stmt) override
 	{
-		evaluate(stmt->expression);
+		evaluate(stmt->expression.get());
 	}
 	void visit(Expression<T> *stmt) override
 	{
-		auto result = evaluate(stmt->expression);
+		std::any result = evaluate(stmt->expression.get());
 		if (lox::repl_mode)
 			print_any(result);
 	}
@@ -120,14 +125,14 @@ public:
 	}
 	void visit(Print<T> *stmt) override
 	{
-		auto result = evaluate(stmt->expression);
+		auto result = evaluate(stmt->expression.get());
 		print_any(result);
 	}
 	void visit(Var<T> *stmt) override
 	{
 		std::any value = nullptr;
-		if (stmt->initializer)
-			value = evaluate(stmt->initializer);
+		if (stmt->initializer.get())
+			value = evaluate(stmt->initializer.get());
 		Environment->define(stmt->name.lexeme, value);
 	}
  	void visit(Block<T> *stmt) override
@@ -137,30 +142,30 @@ public:
  	}
 	void visit(If<T> *stmt) override
 	{
-		auto condition = evaluate(stmt->condition);
+		auto condition = evaluate(stmt->condition.get());
 		if (is_truthy(condition))
-			execute(stmt->Then);
-		else if (stmt->Else)
-			execute(stmt->Else);
+			execute(stmt->Then.get());
+		else if (stmt->Else.get())
+			execute(stmt->Else.get());
 	}
 	void visit(While<T> *stmt) override
 	{
-		auto condition = evaluate(stmt->condition);
+		auto condition = evaluate(stmt->condition.get());
 			while (is_truthy(condition)) {
 				try {
-					execute(stmt->Then);
+					execute(stmt->Then.get());
 				}
 				catch (Break<T> &) {
 					break;
 				}
-				condition = evaluate(stmt->condition);
+				condition = evaluate(stmt->condition.get());
 			}
 	}
 	void visit(Break<T> *stmt) override
 	{
 		throw Break<T>();
 	}
-	std::vector<std::unique_ptr<lox_callable<T>>> functions;
+	
 	void visit(Function<T> *stmt) override
 	{
 		functions.push_back(std::make_unique<lox_function<T>>(*stmt, *Environment));
@@ -172,8 +177,8 @@ public:
 	void visit(Return<T> *stmt) override
 	{
 		std::any value;
-		if (stmt->value)
-			value = evaluate(stmt->value);
+		if (stmt->value.get())
+			value = evaluate(stmt->value.get());
 		throw Return_value(value);
 	}
 	//expressions
@@ -183,8 +188,8 @@ public:
 	}
 	T visit(Binary<T> *expr) override
 	{
-		auto left = evaluate(expr->left);
-		auto right = evaluate(expr->right);
+		auto left = evaluate(expr->left.get());
+		auto right = evaluate(expr->right.get());
 		switch (expr->Operator.type) {
 		case token_type::BANG_EQUAL:
 			return !is_equal(left, right);
@@ -225,7 +230,7 @@ public:
 	}
 	T visit(Grouping<T> *expr) override
 	{
-		return evaluate(expr->expression);
+		return evaluate(expr->expression.get());
 	}
 	T visit(Literal<T> *expr) override
 	{
@@ -255,7 +260,7 @@ public:
 	}
 	T visit(Unary<T> *expr) override
 	{
-		auto right = evaluate(expr->right);
+		auto right = evaluate(expr->right.get());
 		switch (expr->Operator.type) {
 		case token_type::MINUS:
 			check_number_operand(expr->Operator, right);
@@ -270,7 +275,7 @@ public:
 	}
 	T visit(Logical<T> *expr) override
 	{
-		auto left = evaluate(expr->left);
+		auto left = evaluate(expr->left.get());
 		if (expr->Operator.type == token_type::OR) {
 			if (is_truthy(left))
 				return left;
@@ -279,14 +284,14 @@ public:
 			if (!is_truthy(left))
 				return left;
 		}
-		return evaluate(expr->right);
+		return evaluate(expr->right.get());
 	}
 	T visit(Ternary<T> *expr) override
 	{
-		auto condition = evaluate(expr->condition);
+		auto condition = evaluate(expr->condition.get());
 		if (is_truthy(condition))
-			return evaluate(expr->then);
-		return evaluate(expr->_else);
+			return evaluate(expr->then.get());
+		return evaluate(expr->_else.get());
 	}
 	T visit(Variable<T> *expr) override
 	{
@@ -294,7 +299,7 @@ public:
 	}
 	T visit(Assign<T> *expr) override
 	{
-		auto value = evaluate(expr->value);
+		auto value = evaluate(expr->value.get());
 		if (locals.contains(expr))
 			Environment->assign_at(locals[expr], expr->name.lexeme, value);
 		else
@@ -303,7 +308,7 @@ public:
 	}
 	T visit(Call<T> *expr) override
 	{
-		auto function_any = evaluate(expr->callee);
+		auto function_any = evaluate(expr->callee.get());
 		lox_callable<T> *function_call;
 		try {
 			function_call = std::any_cast<lox_callable<T>*>(function_any);
@@ -313,16 +318,23 @@ public:
 		}
 		if (function_call->arity() != (int)expr->arguments.size())
 			throw runtime_exception(expr->paren, "Mismatched function parameters");
-		std::vector<std::any> arg_list;
+		std::vector<T> arg_list;
 		for (auto &i : expr->arguments)
-			arg_list.push_back(evaluate(i));
-		return function_call->call(*this, arg_list);		
+			arg_list.push_back(evaluate(i.get()));
+		auto ret = function_call->call(*this, arg_list);
+		return ret;
+	}
+	T visit(Lambda<T> *expr) override
+	{
+		functions.push_back(std::make_unique<lox_function<T>>(*expr->declaration, *Environment));
+		return functions.back().get();
 	}
 	void resolve(Expr<T> *expr, int depth)
 	{
 		std::cout << expr << " depth: " << depth << std::endl;
 		locals[expr] = depth;
 	}
+	std::vector<std::unique_ptr<lox_callable<T>>> functions;
 	interpreter()
 	{
 		functions.push_back(std::make_unique<Clock<T>>());
@@ -335,18 +347,16 @@ public:
 		delete this->Environment;
 	}
 
-	T interpret(statement_list<T> &stmts)
+	T interpret(std::vector<std::unique_ptr<Stmt<T>>> &stmts)
 	{
-
 		try {
 			for (auto &i : stmts)
-				execute(i);
+				execute(i.get());
 		} catch(runtime_exception &ex) {
 			lox::runtime_error(ex);
 		}
-
+		std::cout << "functions: " << functions.size() << '\n';
 		return {};
 	}
 };
-
 #endif

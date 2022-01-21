@@ -2,6 +2,7 @@
 #include "interpreter.hpp"
 #include "parser.hpp"
 #include "resolver.hpp"
+#include <memory>
 template <typename T>
 using statement_list = delete_pointer_vector<Stmt<T>>;
 
@@ -20,7 +21,8 @@ void lox::run(std::string source)
 	scanner scan(source);
 	std::vector<token> tokens = scan.scan_tokens();
 	parser<std::any> Parser(tokens);
-	statement_list<std::any> statements(Parser.parse());
+	std::vector<std::unique_ptr<Stmt<std::any>>> statements;
+	statements = Parser.parse();
 	if (lox::had_error || lox::had_runtime_error)
 		return;
 	Resolver<std::any> resolver(Interpreter);
