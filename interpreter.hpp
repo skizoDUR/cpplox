@@ -1,19 +1,14 @@
 #ifndef LOX_INTERPRETER
 #define LOX_INTERPRETER
-#include "env_ptr.hpp"
 #include "environment.hpp"
 #include "expr.cpp"
-#include "lox_callable.hpp"
-#include "delete_pointer_vector.hpp"
 #include "stmt.hpp"
 #include "token_type.hpp"
 #include "visitor.hpp"
 #include "runtime_error.cpp"
 #include "finally.hpp"
 #include "lox.hpp"
-#include "clock.hpp"
 #include "lox_function.hpp"
-#include "rand.hpp"
 #include "return.hpp"
 #include <stdexcept>
 #include <any>
@@ -24,9 +19,6 @@
 #include <typeinfo>
 
 class lox;
-
-template <typename T>
-using statement_list = delete_pointer_vector<Stmt<T>>;
 
 template <typename T>
 class interpreter : public visitor<T> {

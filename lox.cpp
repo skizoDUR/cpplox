@@ -3,8 +3,6 @@
 #include "parser.hpp"
 #include "resolver.hpp"
 #include <memory>
-template <typename T>
-using statement_list = delete_pointer_vector<Stmt<T>>;
 
 bool lox::had_error = 0;
 bool lox::had_runtime_error = 0;

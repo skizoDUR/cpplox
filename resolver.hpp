@@ -4,16 +4,12 @@
 #include "visitor.hpp"
 #include "interpreter.hpp"
 #include "stmt.hpp"
-#include "delete_pointer_vector.hpp"
 #include <list>
 #include <string>
 #include <unordered_map>
 #include <algorithm>
-template <typename T>
-using statement_list = delete_pointer_vector<Stmt<T>>;
 
 template <typename T>
-
 class Resolver : visitor<T> {
 public:
 	interpreter<T> &Interpreter;

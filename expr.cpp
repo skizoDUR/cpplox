@@ -2,7 +2,6 @@
 #define EXPR_CPP
 
 #include "token.cpp"
-#include "delete_pointer_vector.hpp"
 #include <any>
 #include <memory>
 #include <vector>

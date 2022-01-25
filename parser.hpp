@@ -10,10 +10,8 @@
 #include <exception>
 #include <vector>
 #include <memory>
-template <typename T>
-using statement_list = delete_pointer_vector<Stmt<T>>;
-template <typename T>
-using argument_t = delete_pointer_vector<Expr<T>>;
+
+
 struct parser_exception : public std::exception {token_type token; const char *msg;};
 
 template <typename T>

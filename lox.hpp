@@ -5,7 +5,6 @@
 #include <sstream>
 #include <string>
 #include <vector>
-
 #include "runtime_error.cpp"
 #include "scanner.hpp"
 #include "token_type.hpp"

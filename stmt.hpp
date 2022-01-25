@@ -17,8 +17,6 @@ public:
 	std::unique_ptr<Expr<T>> expression;
 };
 
-template <typename T>
-using statement_list = delete_pointer_vector<Stmt<T>>;
 
 template <typename T>
 class Expression : public Stmt<T> {
