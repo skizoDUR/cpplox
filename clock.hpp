@@ -1,4 +1,4 @@
-#ifndef CLOCK_HPP
+/*#ifndef CLOCK_HPP
 #define CLOCK_HPP
 #include "lox_callable.hpp"
 #include <ctime>
@@ -16,3 +16,4 @@ struct Clock final : public lox_callable<T> {
 };
 
 #endif
+*/

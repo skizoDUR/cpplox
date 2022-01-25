@@ -165,14 +165,36 @@ public:
 	{
 		throw Break<T>();
 	}
-	
 	void visit(Function<T> *stmt) override
 	{
-		functions.push_back(std::make_unique<lox_function<T>>(*stmt, *Environment));
-		Environment->define(stmt->name.lexeme, (lox_callable<T>*)functions.back().get());
-		auto set_closure = static_cast<lox_function<T>*>(functions.back().get());
-		delete set_closure->closure;
-		set_closure->closure = new environment(*Environment);
+		lox_function<T> f(
+			[](lox_function<T> &f, interpreter<T> &i, std::vector<T> &arguments) ->T
+			{
+				auto Environment = new environment(f.closure);
+				for (int i = 0; i < (int)f.function_decl->params.size(); i++)
+					Environment->define(f.function_decl->params[i].lexeme, arguments[i]);
+				finally (
+					delete Environment;
+					)
+					try {
+						i.execute_block(f.function_decl->body, Environment);
+					}
+					catch (Return_value &ret) {
+						return ret.value;
+					}
+				return {};
+			},
+			[](lox_function<T> &declaration)->int
+			{
+				return declaration.function_decl->params.size();
+			},
+			Environment,
+			stmt
+			);
+		Environment->define(stmt->name.lexeme, f);
+		delete f.closure;
+		f.closure = new environment(*Environment);
+		Environment->define(stmt->name.lexeme, f);
 	}
 	void visit(Return<T> *stmt) override
 	{
@@ -309,38 +331,72 @@ public:
 	T visit(Call<T> *expr) override
 	{
 		auto function_any = evaluate(expr->callee.get());
-		lox_callable<T> *function_call;
+		
+		lox_function<T> function_call;
 		try {
-			function_call = std::any_cast<lox_callable<T>*>(function_any);
+			function_call = std::any_cast<lox_function<T>>(function_any);
 		}
 		catch (...) {
 			throw runtime_exception(expr->paren, "Not callable expression");
 		}
-		if (function_call->arity() != (int)expr->arguments.size())
+		if (function_call.arity() != (int)expr->arguments.size())
 			throw runtime_exception(expr->paren, "Mismatched function parameters");
 		std::vector<T> arg_list;
 		for (auto &i : expr->arguments)
 			arg_list.push_back(evaluate(i.get()));
-		auto ret = function_call->call(*this, arg_list);
+		auto ret = function_call.call(*this, arg_list);
+		
 		return ret;
+		
 	}
 	T visit(Lambda<T> *expr) override
 	{
-		functions.push_back(std::make_unique<lox_function<T>>(*expr->declaration, *Environment));
-		return functions.back().get();
+		lox_function<T> f(
+			[](lox_function<T> &f, interpreter<T> &i, std::vector<T> &arguments) ->T
+			{
+				auto Environment = new environment(f.closure);
+				for (int i = 0; i < (int)f.function_decl->params.size(); i++)
+					Environment->define(f.function_decl->params[i].lexeme, arguments[i]);
+				finally (
+					delete Environment;
+					)
+					try {
+						i.execute_block(f.function_decl->body, Environment);
+					}
+					catch (Return_value &ret) {
+						return ret.value;
+					}
+				return {};
+			},
+			[](lox_function<T> &declaration)->int
+			{
+				return declaration.function_decl->params.size();
+			},
+			Environment,
+			expr->declaration.get()
+			);
+		return f;
 	}
 	void resolve(Expr<T> *expr, int depth)
 	{
-		std::cout << expr << " depth: " << depth << std::endl;
+		//std::cout << expr << " depth: " << depth << std::endl;
 		locals[expr] = depth;
 	}
-	std::vector<std::unique_ptr<lox_callable<T>>> functions;
 	interpreter()
 	{
-		functions.push_back(std::make_unique<Clock<T>>());
-		Environment->define("clock", (lox_callable<T>*)functions.back().get());
-		functions.push_back(std::make_unique<Rand<T>>());
-		Environment->define("rand", (lox_callable<T>*)functions.back().get());
+		lox_function<T> clock(
+				    [](lox_function<T> &f, interpreter<T> &i, std::vector<T> &a) ->T
+				    {
+					    return (double)(time(0));
+				    },
+				    [](lox_function<T> &decl)->int
+				    {
+					    return 0;
+				    },
+				    Environment,
+				    {}
+			);
+		Environment->define("clock", clock);
 	}
 	~interpreter()
 	{
@@ -355,7 +411,6 @@ public:
 		} catch(runtime_exception &ex) {
 			lox::runtime_error(ex);
 		}
-		std::cout << "functions: " << functions.size() << '\n';
 		return {};
 	}
 };

@@ -1,4 +1,4 @@
-#ifndef RAND_HPP
+/*#ifndef RAND_HPP
 #define RAND_HPP
 #include <cstdlib>
 #include <ctime>
@@ -20,3 +20,4 @@ struct Rand final : public lox_callable<T> {
 	~Rand() override = default;
 };
 #endif
+*/

@@ -1,4 +1,4 @@
-#ifndef LOX_CALLABLE_HPP
+/*#ifndef LOX_CALLABLE_HPP
 #define LOX_CALLABLE_HPP
 #include <vector>
 template <class T>
@@ -12,3 +12,4 @@ public:
 	virtual ~lox_callable() = default;
 };
 #endif
+*/
