@@ -4,16 +4,12 @@
 #include "visitor.hpp"
 #include "interpreter.hpp"
 #include "stmt.hpp"
-#include "delete_pointer_vector.hpp"
 #include <list>
 #include <string>
 #include <unordered_map>
 #include <algorithm>
-template <typename T>
-using statement_list = delete_pointer_vector<Stmt<T>>;
 
 template <typename T>
-
 class Resolver : visitor<T> {
 public:
 	interpreter<T> &Interpreter;
@@ -30,8 +26,8 @@ public:
 	void visit(Var<T> *stmt) override
 	{
 		declare(stmt->name);
-		if (stmt->initializer)
-			resolve(stmt->initializer);
+		if (stmt->initializer.get())
+			resolve(stmt->initializer.get());
 		define(stmt->name);
 	}
 	void visit(Block<T> *stmt) override
@@ -42,7 +38,6 @@ public:
 	}
 	T visit(Variable<T> *expr) override
 	{
-		
 		if (!scopes.empty()) {
 			if (scopes.front().contains(expr->name.lexeme)) {
 				auto v = scopes.front()[expr->name.lexeme];
@@ -55,8 +50,13 @@ public:
 	}
 	T visit(Assign<T> *expr) override
 	{
-		resolve(expr->value);
+		resolve(expr->value.get());
 		resolve_local(expr, expr->name);
+		return {};
+	}
+	T visit(Lambda<T> *expr) override
+	{
+		resolve(expr->declaration.get());
 		return {};
 	}
 	void visit(Function<T> *stmt) override
@@ -67,28 +67,28 @@ public:
 	}
 	void visit(Expression<T> *stmt) override
 	{
-		resolve(stmt->expression);
+		resolve(stmt->expression.get());
 	}
 	void visit(If<T> *stmt) override
 	{
-		resolve(stmt->condition);
-		resolve(stmt->Then);
-		if (stmt->Else)
-			resolve(stmt->Else);
+		resolve(stmt->condition.get());
+		resolve(stmt->Then.get());
+		if (stmt->Else.get())
+			resolve(stmt->Else.get());
 	}
 	void visit(Print<T> *stmt) override
 	{
-		resolve(stmt->expression);
+		resolve(stmt->expression.get());
 	}
 	void visit(Return<T> *stmt) override
 	{
-		if (stmt->value)
-			resolve(stmt->value);
+		if (stmt->value.get())
+			resolve(stmt->value.get());
 	}
 	void visit(While<T> *stmt) override
 	{
-		resolve(stmt->condition);
-		resolve(stmt->Then);
+		resolve(stmt->condition.get());
+		resolve(stmt->Then.get());
 	}
 	void visit(Break<T> *stmt) override
 	{
@@ -96,20 +96,20 @@ public:
 	}
 	T visit(Binary<T> *expr) override
 	{
-		resolve(expr->left);
-		resolve(expr->right);
+		resolve(expr->left.get());
+		resolve(expr->right.get());
 		return {};
 	}
 	T visit(Call<T> *expr) override
 	{
-		resolve(expr->callee);
-		for (auto argument : expr->arguments)
-			resolve(argument);
+		resolve(expr->callee.get());
+		for (auto &argument : expr->arguments)
+			resolve(argument.get());
 		return {};
 	}
 	T visit(Grouping<T> *expr) override
 	{
-		resolve(expr->expression);
+		resolve(expr->expression.get());
 		return {};
 	}
 	T visit(Literal<T> *expr) override
@@ -118,31 +118,31 @@ public:
 	}
 	T visit(Logical<T> *expr) override
 	{
-		resolve(expr->left);
-		resolve(expr->right);
+		resolve(expr->left.get());
+		resolve(expr->right.get());
 		return {};
 	}
 	T visit(Unary<T> *expr) override
 	{
-		resolve(expr->right);
+		resolve(expr->right.get());
 		return {};
 	}
 	T visit(Ternary<T> *expr) override
 	{
-		resolve(expr->condition);
-		resolve(expr->then);
-		if (expr->_else)
-			resolve(expr->_else);
+		resolve(expr->condition.get());
+		resolve(expr->then.get());
+		if (expr->_else.get())
+			resolve(expr->_else.get());
 		return {};
 	}
 	T visit(Increment<T> *expr) override
 	{
 		return {};
 	}
-	void resolve(statement_list<T> &statements)
+	void resolve(std::vector<std::unique_ptr<Stmt<T>>> &statements)
 	{
 		for (auto &i : statements)
-			resolve(i);
+			resolve(i.get());
 	}
 	void resolve(Stmt<T> *stmt)
 	{

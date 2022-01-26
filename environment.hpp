@@ -1,7 +1,6 @@
 #ifndef ENVIRONMENT_HPP
 #define ENVIRONMENT_HPP
 #include "token.cpp"
-#include "env_ptr.hpp"
 #include <any>
 #include <string>
 #include <unordered_map>

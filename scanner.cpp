@@ -233,7 +233,8 @@ const std::unordered_map<std::string, token_type> scanner::keywords =
 	{"true",    token_type::TRUE } ,	
 	{"var",	    token_type::VAR },	
 	{"while",   token_type::WHILE },
-	{"break",   token_type::BREAK}
+	{"break",   token_type::BREAK},
+	{"lambda",  token_type::LAMBDA}
 };
 
 #endif

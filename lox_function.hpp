@@ -1,46 +1,61 @@
 #ifndef LOX_FUNCTION_HPP
 #define LOX_FUNCTION_HPP
-#include "env_ptr.hpp"
-#include "lox_callable.hpp"
-#include "return.hpp"
-#include "token.cpp"
-#include "delete_pointer_vector.hpp"
 #include "environment.hpp"
 #include "stmt.hpp"
+#include <functional>
+#include <vector>
+#include <iostream>
 
+template <typename T>
+class interpreter;
 
 template<typename T>
-struct lox_function final : public lox_callable<T> {
-	Function<T> &declaration;
-	environment *closure = nullptr;
-	lox_function(Function<T> &declaration, environment &closure) : declaration(declaration), closure(new environment(closure)) {}
-	int arity() override
-	{
-		return declaration.params.size();
-	}
-	T call(interpreter<T> &interpreter, std::vector<T> &arguments) override
-	{
-		auto Environment = new environment(closure);
-		for (int i = 0; i < (int)declaration.params.size(); i++)
-			Environment->define(declaration.params[i].lexeme, arguments[i]);
-		finally (
+class lox_function {
+public:
+	
 
-			delete Environment;
-			)
-		try {
-			interpreter.execute_block(declaration.body, Environment);
-		}
-		catch (Return_value &ret) {
-			return ret.value;
-		}
-		
-		return {};
+	std::function<T(lox_function &, interpreter<T> &, std::vector<T> &)> call_f;
+	std::function<int(lox_function &)> arity_f;
+	environment *closure = nullptr;
+	Function<T> *function_decl;
+
+	int arity()
+	{
+		return arity_f(*this);
 	}
-	~lox_function() override
+	
+	T call(interpreter<T> &Interpreter, std::vector<T> &arguments)
+	{
+		return call_f(*this, Interpreter, arguments);
+	}
+
+	lox_function<T>(std::function<T(lox_function &, interpreter<T> &, std::vector<T> &)> call_f,
+			std::function<int(lox_function &)> arity_f,
+			environment *closure,
+			Function<T> *function_decl) :
+		call_f(call_f),
+		arity_f(arity_f),
+		closure(new environment(*closure)),
+		function_decl(function_decl) {}
+	lox_function() {}
+	lox_function &operator=(const lox_function &other)
+	{
+		if (this == &other)
+			return *this;
+		this->call_f = other.call_f;
+		this->arity_f = other.arity_f;
+		this->closure = new environment(*other.closure);
+		this->function_decl = other.function_decl;
+		return *this;
+	}
+	lox_function(const lox_function &other)
+	{
+		operator=(other);
+	}
+	~lox_function()
 	{
 		delete this->closure;
 	}
-	      
 };
 
 #endif

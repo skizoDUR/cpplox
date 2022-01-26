@@ -17,6 +17,7 @@ public:
 	virtual T visit(Ternary<T> *) = 0;
 	virtual T visit(Increment<T> *) = 0;
 	virtual T visit(Call<T> *) = 0;
+	virtual T visit(Lambda<T> *) = 0;
 	
 	//statements
 	virtual void visit(Stmt<T> *) = 0;

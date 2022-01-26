@@ -2,8 +2,9 @@
 #define EXPR_CPP
 
 #include "token.cpp"
-#include "delete_pointer_vector.hpp"
 #include <any>
+#include <memory>
+#include <vector>
 
 template <typename T>
 class visitor;
@@ -15,138 +16,46 @@ struct Expr {
 	{
 		return visitor->visit(this);
 	}
-	virtual Expr<T> *clone()
-	{
-		return new Expr<T>(*this);
-	}
 	virtual ~Expr() {};
 };
-template <typename T>
-using argument = delete_pointer_vector<Expr<T>>;
 
 template <typename T>
 class Binary : public Expr<T>{
 public:
-	Expr<T> *left = nullptr;
+	std::unique_ptr<Expr<T>>left;
 	token Operator;
-	Expr<T> *right = nullptr;
-	virtual Expr<T> *clone()
-	{
-		return new Binary<T>(*this);
-	}
+	std::unique_ptr<Expr<T>>right;
+
 	T accept(visitor<T> *visitor) override
 	{
 		return visitor->visit(this);
 	}
-	Binary(const Binary<T> &other)
-	{
-		if (this == &other)
-			throw std::runtime_error("Error: Self assignment");
-		this->left = other.left->clone();
-		this->Operator = other.Operator;
-		this->right = other.right->clone();
-	}
-	Binary(const Binary<T> *other)
-	{
-		if (this == other)
-			throw std::runtime_error("Error: Self assignment");
-		this->left = other->left;
-		this->Operator = other->Operator;
-		this->right = other->right;
-	}
-	Binary(Expr<T> &left, token Operator, Expr<T> &right)
-		: left(new Expr<T>(left)), Operator(Operator), right(new Expr<T>(right)) {}
-	Binary(Expr<T> *left, token Operator, Expr<T> *right)
-		: left(left), Operator(Operator), right(right) {}
 
-	/*void operator=(Binary<T> *other)
-	{
-		if (this == other)
-			return;
-		free();
-		this->left = new Expr<T>(other->left[0]);
-		this->right = new Expr<T>(other->right[0]);
-		this->Operator = other->Operator;
-	}
-	*/
-	void free()
-	{
-		delete left;
-		delete right;
-	}
-	virtual ~Binary()
-	{
-		free();
-	}
+	Binary(std::unique_ptr<Expr<T>> &left, token Operator, std::unique_ptr<Expr<T>> &right)
+		: left(std::move(left)), Operator(Operator), right(std::move(right)) {}
+	virtual ~Binary() = default;
 };
 
 template <typename T>
 class Grouping: public Expr<T>{
 public:
-	Expr<T> *expression = nullptr;
-	virtual Expr<T> *clone()
-	{
-		return new Grouping<T>(*this);
-	}
+	std::unique_ptr<Expr<T>>expression;
+
 	T accept(visitor<T> *visitor) override
 	{
 		return visitor->visit(this);
 	}
-	Grouping(const Grouping<T> &other)
-	{
-		if (this == &other)
-			throw std::runtime_error("Error: Self assignment");
-		this->expression = other.expression->clone();
-	}
-	Grouping(const Grouping<T> *other)
-	{
-		if (this == other)
-			throw std::runtime_error("Error: Self assignment");
-		this->expression = other->expression;
-	}
-	Grouping(Expr<T> &expression = nullptr) : expression(new Expr<T>(expression)) {}
-	Grouping(Expr<T> *expression = nullptr) : expression(expression) {}
-/*	void operator=(Grouping<T> *other)
-	{
-		if (this == other)
-			return;
-		free();
-		this->expression = new Expr<T>(other->expression[0]);
-	}
-*/
-	void free()
-	{
-		delete this->expression;
-	}
-	~Grouping() override
-	{
-		free();
-	} 
+	Grouping(std::unique_ptr<Expr<T>>expression) : expression(std::move(expression)) {}
+	~Grouping() override = default;
 };
 
 template <typename T>
 class Literal : public Expr<T>{
 public:
 	std::any value;
-	virtual Expr<T> *clone()
-	{
-		return new Literal<T>(this);
-	}
 	T accept(visitor<T> *visitor) override
 	{
 		return visitor->visit(this);
-	}
-	Literal(const Literal<T> &other)
-	{
-		if (this == &other)
-			throw std::runtime_error("Error: Self assignment");
-		this->value = other.value;
-	}
-	Literal(const Literal<T> *other)
-	{
-		if (this == other)
-			throw std::runtime_error("Error: Self assignment");
-		this->value = other->value;
 	}
 	Literal(std::any value) : value(value) {}
 	Literal() {}
@@ -157,41 +66,14 @@ template <typename T>
 class Unary : public Expr<T> {
 public:
 	token Operator;
-	Expr<T> *right = nullptr;
-	virtual Expr<T> *clone()
-	{
-		return new Unary<T>(*this);
-	}
+	std::unique_ptr<Expr<T>>right;
 	T accept(visitor<T> *visitor) override
 	{
 		return visitor->visit(this);
 	}
-	Unary(const Unary<T> &other)
-	{
-		if (this == &other)
-			throw std::runtime_error("Error: Self assignment");
-		this->Operator = other.Operator;
-		this->right = other.right->clone();
-	}
-	Unary(const Unary<T> *other)
-	{
-		if (this == other)
-			throw std::runtime_error("Error: Self assignment");
-		this->Operator = other->Operator;
-		this->right = other->right;
-	}
-	Unary(token &Operator, Expr<T> &right) :
-		Operator(Operator), right(new Expr<T>(right)) {}
-	Unary(token &Operator, Expr<T> *right) :
-		Operator(Operator), right(right) {}
-	void free()
-	{
-		delete this->right;
-	}
-	~Unary() override
-	{
-		free();
-	}
+	Unary(token &Operator, std::unique_ptr<Expr<T>> &right) :
+		Operator(Operator), right(std::move(right)) {}
+	~Unary() override = default;
 };
 
 template <typename T>
@@ -199,145 +81,57 @@ class Variable : public Expr<T> {
 public:
 	token name;
 	Variable(token name) : name(name) {};
-	virtual Expr<T> *clone()
-	{
-		return new Variable<T>(*this);
-	}
-	Variable(const Variable<T> &other)
-	{
-		if (this == &other)
-			throw std::runtime_error("Error: Self assignment");
-		this->name = other.name;
-	}
-	Variable(const Variable<T> *other)
-	{
-		if (this == other)
-			throw std::runtime_error("Error: Self assignment");
-		this->name = other->name;
-	}
 	T accept(visitor<T> *visitor) override
 	{
 		return visitor->visit(this);
 	}
-	~Variable() = default;
+	~Variable() override = default;
 };
 
 template <typename T>
 class Assign : public Expr<T> {
 public:
 	token name;
-	Expr<T> *value = nullptr;
-	virtual Expr<T> *clone()
-	{
-		return new Assign<T>(*this);
-	}
-	Assign(const Assign<T> &other)
-	{
-		if (this == &other)
-			throw std::runtime_error("Error: Self assignment");
-		this->name = other.name;
-		this->value = other.value->clone();
-	}
-	Assign(const Assign<T> *other)
-	{
-		if (this == other)
-			throw std::runtime_error("Error: Self assignment");
-		this->name = other->name;
-		this->value = other->value;
-	}
-	Assign(token name, Expr<T> &value) :
-		name(name), value(new Expr<T>(value)) {}
-	Assign(token name, Expr<T> *value) :
-		name(name), value(value) {}
+	std::unique_ptr<Expr<T>>value;
+	Assign(token name, std::unique_ptr<Expr<T>> &value) :
+		name(name), value(std::move(value)) {}
 	T accept(visitor <T> *visitor) override
 	{
 		return visitor->visit(this);
 	}
-	~Assign()
-	{
-		delete this->value;
-	}
+	~Assign() override = default;
 };
 
 template <typename T>
 class Logical : public Expr<T> {
 public:
-	Expr<T> *left = nullptr;
+	std::unique_ptr<Expr<T>>left;
 	token Operator;
-	Expr<T> * right = nullptr;
-	virtual Expr<T> *clone()
-	{
-		return new Logical<T>(*this);
-	}
-	Logical(const Logical<T> &other)
-	{
-		if (this == &other)
-			throw std::runtime_error("Error: Self assignment");
-		this->left = other.left->clone();
-		this->Operator = other.Operator;
-		this->right = other.left->clone();
-	}
-	Logical(const Logical<T> *other)
-	{
-		if (this == other)
-			throw std::runtime_error("Error: Self assignment");
-		this->left = other->left;
-		this->Operator = other->Operator;
-		this->right = other->right;
-	}
+	std::unique_ptr<Expr<T>> right ;
 	T accept(visitor<T> *visitor) override
 	{
 		return visitor->visit(this);
 	}
-	Logical(Expr<T> &left, token Operator, Expr<T> &right) :
-		left(left.clone()), Operator(Operator), right(right.clone()) {}
-	Logical(Expr<T> *left, token Operator, Expr<T> *right) :
-		left(left), Operator(Operator), right(right) {}
+	Logical(std::unique_ptr<Expr<T>> &left, token Operator, std::unique_ptr<Expr<T>> &right) :
+		left(std::move(left)), Operator(Operator), right(std::move(right)) {}
 
-	virtual ~Logical() override
-	{
-		delete this->left;
-		delete this->right;
-	}
+	virtual ~Logical() override = default;
 };
 
 template <typename T>
 struct Ternary : public Expr<T> {
 
-	Expr<T> *condition = nullptr;
-	Expr<T> *then = nullptr;
-	Expr<T> *_else = nullptr;
+	std::unique_ptr<Expr<T>>condition ;
+	std::unique_ptr<Expr<T>>then ;
+	std::unique_ptr<Expr<T>>_else ;
 	
 	T accept(visitor<T> *visitor) override
 	{
 		return visitor->visit(this);
 	}
-	Expr<T> *clone() override
-	{
-		return new Ternary<T>(*this);
-	}
-	Ternary(const Ternary<T> &other)
-	{
-		this->condition = other.condition->clone();
-		this->then = other.then->clone();
-		this->_else = other._else->clone();
-	}
-	Ternary(const Ternary<T> *other)
-	{
-		if (this == other)
-			throw std::runtime_error("Error: Self assignment");
-		this->condition = other->condition;
-		this->then = other->then;
-		this->_else = other->_else;
-	}
-	Ternary(Expr<T> *condition, Expr<T> *then, Expr<T> *_else) : condition(condition), then(then), _else(_else) {}
+	Ternary(std::unique_ptr<Expr<T>> &condition, std::unique_ptr<Expr<T>> &then, std::unique_ptr<Expr<T>> &_else) : condition(std::move(condition)), then(std::move(then)), _else(std::move(_else)) {}
 
-	virtual ~Ternary() override
-	{
-		delete this->condition;
-		delete this->then;
-		delete this->_else;
-	}
+	virtual ~Ternary() override = default;
 };
 template <typename T>
 struct Increment : public Expr<T> {
@@ -345,37 +139,37 @@ struct Increment : public Expr<T> {
 	token Operator;
 	bool postfix;
 	T accept(visitor<T> *visitor) override {return visitor->visit(this); }
-	Expr<T> *clone()
+	std::unique_ptr<Expr<T>>clone()
 	{
 		return new Increment<T>(*this);
 	}
-	Increment(const Increment &other) : target_name(other.target_name), Operator(other.Operator), postfix(other.postfix) {}
 	Increment(const token &target_name, const token &Operator, const bool &postfix) : target_name(target_name), Operator(Operator), postfix(postfix) {}
 	~Increment() override = default;
 };
 
-
 template <typename T>
 struct Call : public Expr<T> {
-
-	Expr<T> *callee = nullptr;
+	std::unique_ptr<Expr<T>>callee ;
 	token paren;
-	argument<T> arguments;
-	
+	std::vector<std::unique_ptr<Expr<T>>> arguments;
 	T accept(visitor<T> *visitor) override
 	{
 		return visitor->visit(this);
 	}
-	Expr<T> *clone() override
-	{
-		return new Call<T>(*this);
-	}
-	Call (const Call<T> &other) : callee(other.callee->clone()), paren(other.paren), arguments(other.arguments) {}
-	Call(Expr<T> *callee, token paren, argument<T> &arguments) : callee(callee), paren(paren), arguments(arguments) {}
+	Call(std::unique_ptr<Expr<T>> &callee, token paren, std::vector<std::unique_ptr<Expr<T>>> &arguments) : callee(std::move(callee)), paren(paren), arguments(std::move(arguments)) {}
+	virtual ~Call() override = default;
+};
 
-	virtual ~Call() override
+template<typename T>
+struct Function;
+template <typename T>
+struct Lambda : public Expr<T> {
+	std::unique_ptr<Function<T>> declaration;
+	Lambda(std::unique_ptr<Function<T>> &declaration) : declaration(std::move(declaration)) {}
+	T accept(visitor<T> *visitor) override
 	{
-		delete this->callee;
+		return visitor->visit(this);
 	}
+
 };
 #endif
