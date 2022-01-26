@@ -28,4 +28,25 @@ Functions and lambdas environments are not static, you get a new environment on 
 
 Functions can capture outer variables but BY COPY only, means they can't update them. This is because C++ doesn't have a garbage collector and the captured environments may go out of scope at any moment.
 
+# Examples:
+```python
+fun f(a, b) 
+{
+  return a + b;
+}
+print f(1, 2); //3
+```
+```python
+lambda() {print "Hello world!";}(); //inline lambda call
+```
+```python
+fun f()
+{
+  var i = 0;
+  return lambda() {print i;}; //lambda captures environment
+}
 
+var a = f();
+a(); //prints 0
+
+```
