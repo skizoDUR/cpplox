@@ -82,7 +82,9 @@ public:
 	}
 	T visit(Lambda<T> *expr) override
 	{
-		resolve(expr->declaration.get());
+		//I don't want the ANONYMOUS function to be taken into account as a variable
+		//As opposite to real functions lambdas don't bind a name themselves
+		resolve_function(expr->declaration.get(), function_type::FUNCTION);
 		return {};
 	}
 	void visit(Function<T> *stmt) override
