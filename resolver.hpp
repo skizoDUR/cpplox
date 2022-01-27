@@ -34,6 +34,8 @@ public:
 	}
 	void becomes_used(token &name)
 	{
+		if (scopes.empty())
+			return;
 		scopes.front()[name.lexeme].used = true; //variable becomes used
 	}
 	T visit(Expr<T> *expr) override
@@ -67,7 +69,7 @@ public:
 					lox::error(expr->name, "Can't read local variable in its own initializer");
 			}
 		}
-		becomes_used(expr->name); //this variable is used
+//		becomes_used(expr->name); //this variable is used
 		resolve_local(expr, expr->name);
 		return {};
 	}
