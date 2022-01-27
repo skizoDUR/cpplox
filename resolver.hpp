@@ -69,7 +69,7 @@ public:
 					lox::error(expr->name, "Can't read local variable in its own initializer");
 			}
 		}
-//		becomes_used(expr->name); //this variable is used
+		becomes_used(expr->name); //this variable is used
 		resolve_local(expr, expr->name);
 		return {};
 	}
