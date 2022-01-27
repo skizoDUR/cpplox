@@ -27,6 +27,8 @@ public:
 	Resolver(interpreter<T> &Interpreter) : Interpreter(Interpreter) {}
 	void report_unused()
 	{
+		if (scopes.empty())
+			return;
 		for (auto &i : scopes.front())
 			if (!i.second.used)
 				std::cout << "Unused variable: " << i.first << '\n';
@@ -36,7 +38,8 @@ public:
 	{
 		if (scopes.empty())
 			return;
-		scopes.front()[name.lexeme].used = true; //variable becomes used
+		if (scopes.front().contains(name.lexeme))
+			scopes.front()[name.lexeme].used = true; //variable becomes used
 	}
 	T visit(Expr<T> *expr) override
 	{

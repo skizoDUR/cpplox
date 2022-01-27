@@ -398,8 +398,9 @@ public:
 	T interpret(std::vector<std::unique_ptr<Stmt<T>>> &stmts)
 	{
 		try {
-			for (auto &i : stmts)
+			for (auto &i : stmts) {
 				execute(i.get());
+			}
 		} catch(runtime_exception &ex) {
 			lox::runtime_error(ex);
 		}
