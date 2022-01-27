@@ -16,11 +16,19 @@ public:
 		NONE,
 		FUNCTION
 	};
+	struct variable_traits {
+		bool ready;
+		bool used;
+	};
 	bool is_at_loop = false;
 	function_type current_function = function_type::NONE;
 	interpreter<T> &Interpreter;
-	std::list<std::unordered_map<std::string, bool>> scopes;
+	std::list<std::unordered_map<std::string, variable_traits>> scopes;
 	Resolver(interpreter<T> &Interpreter) : Interpreter(Interpreter) {}
+	void becomes_used(token &name)
+	{
+		scopes.front()[name.lexeme].used = true; //variable becomes used
+	}
 	T visit(Expr<T> *expr) override
 	{
 		return expr->accept(this);
@@ -40,23 +48,29 @@ public:
 	{
 		begin_scope();
 		resolve(stmt->statements);
+		for (auto &i : scopes.front())
+			if (!i.second.used)
+				std::cout << "Unused variable: " << i.first << '\n';
+		
 		end_scope();
 	}
 	T visit(Variable<T> *expr) override
 	{
 		if (!scopes.empty()) {
 			if (scopes.front().contains(expr->name.lexeme)) {
-				auto v = scopes.front()[expr->name.lexeme];
+				auto v = scopes.front()[expr->name.lexeme].ready;
 				if (!v)
 					lox::error(expr->name, "Can't read local variable in its own initializer");
 			}
 		}
+		becomes_used(expr->name); //this variable is used
 		resolve_local(expr, expr->name);
 		return {};
 	}
 	T visit(Assign<T> *expr) override
 	{
 		resolve(expr->value.get());
+		becomes_used(expr->name);
 		resolve_local(expr, expr->name);
 		return {};
 	}
@@ -176,13 +190,14 @@ public:
 	{
 		if (scopes.empty())
 			return;
-		scopes.front()[name.lexeme] = false;
+		scopes.front()[name.lexeme].ready = false;
 	}
 	void define(token &name)
 	{
 		if (scopes.empty())
 			return;
-		scopes.front()[name.lexeme] = true;
+		scopes.front()[name.lexeme].ready = true;
+		scopes.front()[name.lexeme].used = false;
 	}
 	void resolve_local(Expr<T> *expr, token &name)
 	{
