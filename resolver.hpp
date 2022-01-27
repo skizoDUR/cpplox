@@ -25,6 +25,13 @@ public:
 	interpreter<T> &Interpreter;
 	std::list<std::unordered_map<std::string, variable_traits>> scopes;
 	Resolver(interpreter<T> &Interpreter) : Interpreter(Interpreter) {}
+	void report_unused()
+	{
+		for (auto &i : scopes.front())
+			if (!i.second.used)
+				std::cout << "Unused variable: " << i.first << '\n';
+
+	}
 	void becomes_used(token &name)
 	{
 		scopes.front()[name.lexeme].used = true; //variable becomes used
@@ -48,10 +55,7 @@ public:
 	{
 		begin_scope();
 		resolve(stmt->statements);
-		for (auto &i : scopes.front())
-			if (!i.second.used)
-				std::cout << "Unused variable: " << i.first << '\n';
-		
+		report_unused();
 		end_scope();
 	}
 	T visit(Variable<T> *expr) override
@@ -217,6 +221,7 @@ public:
 			define(param);
 		}
 		resolve(stmt->body);
+		report_unused();
 		end_scope();
 		current_function = enclosing_function;
 	}
