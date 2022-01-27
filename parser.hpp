@@ -19,7 +19,6 @@ class parser {
 private:
 	std::vector<token> tokens;
 	int current = 0;
-	bool is_at_loop = 0;
 	std::unique_ptr<Stmt<T>>var_declaration()
 	{
 		auto name = consume(token_type::IDENTIFIER, "Expected identifier name");
@@ -103,19 +102,14 @@ private:
 	}
  	std::unique_ptr<Stmt<T>>while_statement()
  	{
- 		is_at_loop = 1;
  		consume(token_type::LEFT_PAREN, "'(' Expected after while.");
  		std::unique_ptr<Expr<T>>condition = expression();
  		consume(token_type::RIGHT_PAREN, "')' Expected after condition.");
  		std::unique_ptr<Stmt<T>>then = statement();
- 		finally (
-			is_at_loop = 0;
-			)
 	        return std::make_unique<While<T>>(condition, then);
  	}
 	std::unique_ptr<Stmt<T>>for_statement()
 	{
-		is_at_loop = 1;
 		consume(token_type::LEFT_PAREN, "'(' Expected after for.");
 		std::unique_ptr<Stmt<T>>initializer ;
 		if (!match(token_type::SEMICOLON)) { //basically consumes for (; ...)
@@ -155,9 +149,7 @@ private:
 		}
 		
 		//we add the initializer to the beginning of the loop
-		finally (
-			is_at_loop = 0;
-			)
+
 		return body;
 	}
 	std::unique_ptr<Stmt<T>>statement()
@@ -166,7 +158,6 @@ private:
 			return std::move(return_statement());
 		if (match(token_type::BREAK))
 			return std::move(break_statement());
-		
 		if (match(token_type::WHILE))
 			return std::move(while_statement());
 		if (match(token_type::FOR))
@@ -195,10 +186,9 @@ private:
 	}
 	std::unique_ptr<Stmt<T>>break_statement()
 	{
-		if (!is_at_loop)
-			throw (error(previous(), "Break used outside of loop"));
+		auto keyword = previous();
 		consume(token_type::SEMICOLON, "Expected ';'");
-		return std::make_unique<Break<T>>();
+		return std::make_unique<Break<T>>(keyword);
 	}
 	bool is_increment()
 	{

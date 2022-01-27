@@ -25,6 +25,8 @@ void lox::run(std::string source)
 		return;
 	Resolver<std::any> resolver(Interpreter);
 	resolver.resolve(statements);
+	if (lox::had_error)
+		return;
 	lox::Interpreter.interpret(statements);
 }
 

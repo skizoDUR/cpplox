@@ -86,6 +86,10 @@ public:
 
 template <typename T>
 class Break : public Stmt<T>, std::exception {
+public:
+	token keyword;
+	Break(token &keyword) : keyword(keyword) {}
+	Break() {}
 	void accept(visitor<T> *visitor) {return visitor->visit(this);}
 };
 

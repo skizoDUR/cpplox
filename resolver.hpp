@@ -12,6 +12,12 @@
 template <typename T>
 class Resolver : visitor<T> {
 public:
+	enum function_type {
+		NONE,
+		FUNCTION
+	};
+	bool is_at_loop = false;
+	function_type current_function = function_type::NONE;
 	interpreter<T> &Interpreter;
 	std::list<std::unordered_map<std::string, bool>> scopes;
 	Resolver(interpreter<T> &Interpreter) : Interpreter(Interpreter) {}
@@ -63,7 +69,7 @@ public:
 	{
 		declare(stmt->name);
 		define(stmt->name);
-		resolve_function(stmt);
+		resolve_function(stmt, function_type::FUNCTION);
 	}
 	void visit(Expression<T> *stmt) override
 	{
@@ -82,17 +88,23 @@ public:
 	}
 	void visit(Return<T> *stmt) override
 	{
+		if (current_function == function_type::NONE) {
+			lox::error(stmt->keyword, "Can't return from top level.");
+		}
 		if (stmt->value.get())
 			resolve(stmt->value.get());
 	}
 	void visit(While<T> *stmt) override
 	{
 		resolve(stmt->condition.get());
+		is_at_loop = true;
 		resolve(stmt->Then.get());
+		is_at_loop = false;
 	}
 	void visit(Break<T> *stmt) override
 	{
-		
+		if (!is_at_loop)
+			lox::error(stmt->keyword, "Break used outside of loop");
 	}
 	T visit(Binary<T> *expr) override
 	{
@@ -180,8 +192,10 @@ public:
 				break;
 			}
 	}
-	void resolve_function(Function<T> *stmt)
+	void resolve_function(Function<T> *stmt, function_type type)
 	{
+		auto enclosing_function = current_function;
+		current_function = type;
 		begin_scope();
 		for (auto &param : stmt->params) {
 			declare(param);
@@ -189,6 +203,7 @@ public:
 		}
 		resolve(stmt->body);
 		end_scope();
+		current_function = enclosing_function;
 	}
 
 };
