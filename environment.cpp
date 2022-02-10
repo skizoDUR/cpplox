@@ -43,9 +43,9 @@ std::any environment::get_at(int distance, std::string name)
 }
 environment &environment::ancestor(int distance)
 {
-	environment *node = this;
+	auto node = this;
 	for (auto i = 0; i < distance; i++)
-		node = node->enclosing;
+		node = node->enclosing.data;
 	return *node;
 }
 void environment::assign_at(int distance, std::string name, std::any value)

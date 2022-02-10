@@ -12,7 +12,12 @@ int main(int argc, char **argv)
 		lox::run_file(argv[1]);
 	}
 	else {
-		lox::repl_mode = 1;
-		lox::run_prompt();
+		try {
+			lox::repl_mode = 1;
+			lox::run_prompt();
+		}
+		catch (exit_ex&) {
+			std::cout << "Exit!" << '\n';
+		}
 	}
 }

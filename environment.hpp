@@ -1,6 +1,7 @@
 #ifndef ENVIRONMENT_HPP
 #define ENVIRONMENT_HPP
 #include "token.cpp"
+#include "deferred_ptr.hpp"
 #include <any>
 #include <string>
 #include <unordered_map>
@@ -9,8 +10,8 @@
 class environment {
 	std::unordered_map<std::string, std::any> values;
 public:
-	environment *enclosing = nullptr;
-	environment(environment *enclosing) : enclosing(enclosing) {}
+	deferred_ptr<environment> enclosing;
+	environment(deferred_ptr<environment> enclosing) : enclosing(enclosing) {}
 	environment(const environment &other)
 	{
 		this->values = other.values;

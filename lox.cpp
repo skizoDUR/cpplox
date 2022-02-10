@@ -7,6 +7,7 @@
 bool lox::had_error = 0;
 bool lox::had_runtime_error = 0;
 bool lox::repl_mode = 0;
+deferred_heap lox::heap;
 interpreter<std::any> lox::Interpreter;
 
 lox::lox()

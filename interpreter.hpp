@@ -79,7 +79,7 @@ private:
 	//void execute(Stmt<T> &);
 public:
 	//statements
-	void execute_block(std::vector<std::unique_ptr<Stmt<T>>>  &stmts, environment *env)
+	void execute_block(std::vector<std::unique_ptr<Stmt<T>>>  &stmts, deferred_ptr<environment> &env)
  	{
 		auto previous = this->Environment;
 		this->Environment = env;
@@ -90,8 +90,8 @@ public:
 			execute(i->get());
 	}
 
-	environment *Environment = new environment();
-	environment *globals = Environment;
+	deferred_ptr<environment> Environment = lox::heap.make<environment>();
+	deferred_ptr<environment> globals = Environment;
 
 	void visit(Stmt<T> *stmt) override
 	{
@@ -129,8 +129,8 @@ public:
 	}
  	void visit(Block<T> *stmt) override
  	{
-		environment env(Environment);
- 		execute_block(stmt->statements, &env);
+		auto env = lox::heap.make<environment>(Environment);
+ 		execute_block(stmt->statements, env);
  	}
 	void visit(If<T> *stmt) override
 	{
@@ -162,18 +162,15 @@ public:
 		lox_function<T> f(
 			[](lox_function<T> &f, interpreter<T> &i, std::vector<T> &arguments) ->T
 			{
-				auto Environment = new environment(f.closure);
+				auto Environment = lox::heap.make<environment>(f.closure);
 				for (int i = 0; i < (int)f.function_decl->params.size(); i++)
 					Environment->define(f.function_decl->params[i].lexeme, arguments[i]);
-				finally (
-					delete Environment;
-					)
-					try {
-						i.execute_block(f.function_decl->body, Environment);
-					}
-					catch (Return_value &ret) {
-						return ret.value;
-					}
+				try {
+					i.execute_block(f.function_decl->body, Environment);
+				}
+				catch (Return_value &ret) {
+					return ret.value;
+				}
 				return {};
 			},
 			[](lox_function<T> &declaration)->int
@@ -184,9 +181,7 @@ public:
 			stmt
 			);
 		Environment->define(stmt->name.lexeme, f);
-		delete f.closure;
-		f.closure = new environment(*Environment);
-		Environment->define(stmt->name.lexeme, f);
+
 	}
 	void visit(Return<T> *stmt) override
 	{
@@ -346,18 +341,15 @@ public:
 		lox_function<T> f(
 			[](lox_function<T> &f, interpreter<T> &i, std::vector<T> &arguments) ->T
 			{
-				auto Environment = new environment(f.closure);
+				auto Environment = lox::heap.make<environment>(f.closure);
 				for (int i = 0; i < (int)f.function_decl->params.size(); i++)
 					Environment->define(f.function_decl->params[i].lexeme, arguments[i]);
-				finally (
-					delete Environment;
-					)
-					try {
-						i.execute_block(f.function_decl->body, Environment);
-					}
-					catch (Return_value &ret) {
-						return ret.value;
-					}
+				try {
+					i.execute_block(f.function_decl->body, Environment);
+				}
+				catch (Return_value &ret) {
+					return ret.value;
+				}
 				return {};
 			},
 			[](lox_function<T> &declaration)->int
@@ -388,11 +380,25 @@ public:
 				    Environment,
 				    {}
 			);
+		lox_function<T> exit(
+			[](lox_function<T> &f, interpreter<T> &i, std::vector<T> &a) ->T
+			{
+				throw exit_ex();
+			},
+			[](lox_function<T> &decl)->int
+			{
+				return 0;
+			},
+			Environment,
+			{}
+			);
+		
 		Environment->define("clock", clock);
+		Environment->define("exit", exit);
 	}
 	~interpreter()
 	{
-		delete this->Environment;
+		
 	}
 
 	T interpret(std::vector<std::unique_ptr<Stmt<T>>> &stmts)
@@ -400,7 +406,9 @@ public:
 		try {
 			for (auto &i : stmts) {
 				execute(i.get());
+				lox::heap.collect();
 			}
+
 		} catch(runtime_exception &ex) {
 			lox::runtime_error(ex);
 		}
