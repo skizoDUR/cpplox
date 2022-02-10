@@ -17,16 +17,13 @@ The lox programming language in C++ (WIP)
 
 # Todo:
 
--Improve environment capturing
 
 -Split hpp and cpp files
 
 -Add classes and methods
 
 # Limitations:
-Functions and lambdas environments are not static, you get a new environment on each call and gets destroyed at the end of the function's life, this is due to the type system using std::any which is copy only.
-
-Functions can capture outer variables but BY COPY only, means they can't update them. This is because C++ doesn't have a garbage collector and the captured environments may go out of scope at any moment.
+Mostly the same as the original Lox, C++ is non garbage collected thus the funarg problem becomes evident, I worked around it by writing a small arena that acts like a gc and permits reference cycles.
 
 # Examples:
 ```python
@@ -43,10 +40,11 @@ lambda() {print "Hello world!";}(); //inline lambda call
 fun f()
 {
   var i = 0;
-  return lambda() {print i;}; //lambda captures environment
+  return lambda() {print i++;}; //lambda captures environment and increases value
 }
 
 var a = f();
 a(); //prints 0
+a(); //prints 1
 
 ```
