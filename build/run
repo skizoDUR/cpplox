@@ -1,0 +1,26 @@
+fun f()
+{
+	var i = 0;
+	return lambda() {print ++i; };
+}
+var a = f();
+a();
+a();
+f();
+f();
+f();
+
+
+/*
+fun fib(x)
+{
+	if (x <= 2) return x;
+
+	return fib(x - 2) + fib(x - 1);
+}
+var t = clock();
+for (var i = 0; i < 10; i++) {
+    print fib(i);
+}
+print clock() - t;
+*/
