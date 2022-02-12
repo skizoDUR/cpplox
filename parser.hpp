@@ -81,9 +81,9 @@ private:
 		}
 		return std::make_unique<Print<T>>(expr);
 	}
- 	std::vector<std::unique_ptr<Stmt<T>>> block()
+ 	std::vector<std::shared_ptr<Stmt<T>>> block()
  	{
-		std::vector<std::unique_ptr<Stmt<T>>> statements;
+		std::vector<std::shared_ptr<Stmt<T>>> statements;
  		while (!check(token_type::RIGHT_BRACE) && !is_at_end())
 			statements.push_back(declaration());
  		consume(token_type::RIGHT_BRACE, "Expected }");
@@ -131,7 +131,7 @@ private:
 		
 		std::unique_ptr<Stmt<T>>body = statement();
 		if (increase) {
-			std::vector<std::unique_ptr<Stmt<T>>> tmp;
+			std::vector<std::shared_ptr<Stmt<T>>> tmp;
 			tmp.push_back(std::move(body));
 			tmp.push_back(std::make_unique<Expression<T>>(increase));
 			body = std::make_unique<Block<T>>(tmp);
@@ -142,7 +142,7 @@ private:
 		body = std::make_unique<While<T>>(condition, body);
 		
 		if (initializer.get()) { //there's an initializer
-			std::vector<std::unique_ptr<Stmt<T>>> tmp;
+			std::vector<std::shared_ptr<Stmt<T>>> tmp;
 			tmp.push_back(std::move(initializer));
 			tmp.push_back(std::move(body));
 			body = std::make_unique<Block<T>>(tmp);

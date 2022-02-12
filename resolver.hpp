@@ -24,7 +24,10 @@ public:
 	function_type current_function = function_type::NONE;
 	interpreter<T> &Interpreter;
 	std::list<std::unordered_map<std::string, variable_traits>> scopes;
-	Resolver(interpreter<T> &Interpreter) : Interpreter(Interpreter) {}
+	Resolver(interpreter<T> &Interpreter) : Interpreter(Interpreter)
+	{
+		scopes.emplace_back(); //global scope
+	}
 	void report_unused()
 	{
 		if (scopes.empty())
@@ -181,6 +184,11 @@ public:
 		for (auto &i : statements)
 			resolve(i.get());
 	}
+	void resolve(std::vector<std::shared_ptr<Stmt<T>>> &statements)
+	{
+		for (auto &i : statements)
+			resolve(i.get());
+	}
 	void resolve(Stmt<T> *stmt)
 	{
 		stmt->accept(this);
@@ -232,6 +240,5 @@ public:
 		end_scope();
 		current_function = enclosing_function;
 	}
-
 };
 #endif

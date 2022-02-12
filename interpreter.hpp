@@ -71,7 +71,6 @@ private:
 	std::unordered_map<Expr<T> *, int> locals; 
 	std::any lookup_variable(token name, Expr<T> *expr)
 	{
-		//std::cout << expr << " name : " << name.lexeme << '\n';
 		if (locals.contains(expr))
 			return Environment->get_at(locals[expr], name.lexeme);
 		return globals->get(name);
@@ -89,7 +88,16 @@ public:
 		for (auto i = stmts.begin(); i != stmts.end(); i++)
 			execute(i->get());
 	}
-
+	void execute_block(std::vector<std::shared_ptr<Stmt<T>>>  &stmts, deferred_ptr<environment> &env)
+ 	{
+		auto previous = this->Environment;
+		this->Environment = env;
+		finally (
+			this->Environment = previous;
+			)
+		for (auto i = stmts.begin(); i != stmts.end(); i++)
+			execute(i->get());
+	}
 	deferred_ptr<environment> Environment = lox::heap.make<environment>();
 	deferred_ptr<environment> globals = Environment;
 
@@ -163,10 +171,10 @@ public:
 			[](lox_function<T> &f, interpreter<T> &i, std::vector<T> &arguments) ->T
 			{
 				auto Environment = lox::heap.make<environment>(f.closure);
-				for (int i = 0; i < (int)f.function_decl->params.size(); i++)
-					Environment->define(f.function_decl->params[i].lexeme, arguments[i]);
+				for (int i = 0; i < (int)f.function_decl.params.size(); i++)
+					Environment->define(f.function_decl.params[i].lexeme, arguments[i]);
 				try {
-					i.execute_block(f.function_decl->body, Environment);
+					i.execute_block(f.function_decl.body, Environment);
 				}
 				catch (Return_value &ret) {
 					return ret.value;
@@ -175,10 +183,10 @@ public:
 			},
 			[](lox_function<T> &declaration)->int
 			{
-				return declaration.function_decl->params.size();
+				return declaration.function_decl.params.size();
 			},
 			Environment,
-			stmt
+			*stmt
 			);
 		Environment->define(stmt->name.lexeme, f);
 
@@ -342,10 +350,10 @@ public:
 			[](lox_function<T> &f, interpreter<T> &i, std::vector<T> &arguments) ->T
 			{
 				auto Environment = lox::heap.make<environment>(f.closure);
-				for (int i = 0; i < (int)f.function_decl->params.size(); i++)
-					Environment->define(f.function_decl->params[i].lexeme, arguments[i]);
+				for (int i = 0; i < (int)f.function_decl.params.size(); i++)
+					Environment->define(f.function_decl.params[i].lexeme, arguments[i]);
 				try {
-					i.execute_block(f.function_decl->body, Environment);
+					i.execute_block(f.function_decl.body, Environment);
 				}
 				catch (Return_value &ret) {
 					return ret.value;
@@ -354,10 +362,10 @@ public:
 			},
 			[](lox_function<T> &declaration)->int
 			{
-				return declaration.function_decl->params.size();
+				return declaration.function_decl.params.size();
 			},
 			Environment,
-			expr->declaration.get()
+			*expr->declaration.get()
 			);
 		return f;
 	}
@@ -368,7 +376,7 @@ public:
 	}
 	interpreter()
 	{
-		lox_function<T> clock(
+/*		lox_function<T> clock(
 				    [](lox_function<T> &f, interpreter<T> &i, std::vector<T> &a) ->T
 				    {
 					    return (double)(time(0));
@@ -395,6 +403,7 @@ public:
 		
 		Environment->define("clock", clock);
 		Environment->define("exit", exit);
+*/
 	}
 	~interpreter()
 	{

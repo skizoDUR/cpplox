@@ -55,11 +55,11 @@ public:
 template <typename T>
 class Block : public Stmt<T> {
 public:
-	Block(std::vector<std::unique_ptr<Stmt<T>>> &statements) : statements(std::move(statements)) {}
+	Block(std::vector<std::shared_ptr<Stmt<T>>> &statements) : statements(std::move(statements)) {}
 	Block() {}
 	~Block() override = default;
 	void accept(visitor<T> *visitor) {return visitor->visit(this);}
-	std::vector<std::unique_ptr<Stmt<T>>> statements;
+	std::vector<std::shared_ptr<Stmt<T>>> statements;
 };
 
 template <typename T>
@@ -99,17 +99,33 @@ public:
 	void accept(visitor<T> *visitor) {return visitor->visit(this);}
 	token name;
 	std::vector<token> params;
-	std::vector<std::unique_ptr<Stmt<T>>> body;
+	std::vector<std::shared_ptr<Stmt<T>>> body;
 
-	Function(token name, std::vector<token> &params, std::vector<std::unique_ptr<Stmt<T>>>&body) : name(name), params(std::move(params)), body(std::move(body)) {}
-	Function(std::vector<token> &params, std::vector<std::unique_ptr<Stmt<T>>>&body) : params(std::move(params)), body(std::move(body)) {}
+	Function(token name, std::vector<token> &params, std::vector<std::shared_ptr<Stmt<T>>>&body) : name(name), params(std::move(params)), body(std::move(body)) {}
+	Function(std::vector<token> &params, std::vector<std::shared_ptr<Stmt<T>>>&body) : params(std::move(params)), body(std::move(body)) {}
 	Function(Function<T> &&other)
 	{
 		this->name = other.name;
 		this->params = other.params;
 		this->body = std::move(other.body);
 	}
+	Function(Function<T> &other)
+	{
+		this->name = other.name;
+		this->params = other.params;
+		this->body = other.body;
+	}
+	const Function &operator=(const Function &other)
+	{
+		if (this == &other)
+			return *this;
+		this->name = other.name;
+		this->params = other.params;
+		this->body = other.body;
+		return *this;
+	}
 	~Function() override = default;
+	Function() {}
 };
 
 template <typename T>

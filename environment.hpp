@@ -11,7 +11,7 @@ class environment {
 	std::unordered_map<std::string, std::any> values;
 public:
 	deferred_ptr<environment> enclosing;
-	environment(deferred_ptr<environment> enclosing) : enclosing(enclosing) {}
+	environment(deferred_ptr<environment> &enclosing) : enclosing(enclosing) {}
 	environment(const environment &other)
 	{
 		this->values = other.values;
