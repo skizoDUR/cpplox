@@ -172,4 +172,15 @@ struct Lambda : public Expr<T> {
 	}
 
 };
+
+template <typename T>
+struct This_expr : public Expr<T> {
+	token Token;
+	This_expr(token Token) : Token(Token) {}
+	T accept(visitor<T> *visitor) override
+	{
+		return visitor->visit(this);
+	}
+};
+
 #endif

@@ -19,13 +19,14 @@ class parser {
 private:
 	std::vector<token> tokens;
 	int current = 0;
+
 	std::unique_ptr<Stmt<T>>var_declaration()
 	{
 		auto name = consume(token_type::IDENTIFIER, "Expected identifier name");
 		std::unique_ptr<Expr<T>>initializer; //empty initializer
 		if (match(token_type::EQUAL))
 			initializer = expression();
-		consume(token_type::SEMICOLON, "Expected ';' after variable declaration.");
+		repl_consume(token_type::SEMICOLON, "Expected ';' after variable declaration.");
 		return std::make_unique<Var<T>>(name, initializer);
 	}
 	std::unique_ptr<Stmt<T>>declaration()
@@ -47,7 +48,7 @@ private:
 	{
 		auto identifier = consume(token_type::IDENTIFIER, "Expected identifier after function declaration");
 		std::vector<token> parameters;
-		consume(token_type::LEFT_PAREN, "Ex-pected '(' after function declaration");
+		consume(token_type::LEFT_PAREN, "Expected '(' after function declaration");
 		if (peek().type != token_type::RIGHT_PAREN) {
 			do {
 				if (parameters.size() >= 255)
@@ -63,22 +64,14 @@ private:
 	std::unique_ptr<Stmt<T>>expression_statement()
 	{
 		auto expr = expression();
-		if (!lox::repl_mode)
-			consume(token_type::SEMICOLON, "Expected ';'");
-		else
-			match(token_type::SEMICOLON);
-		
+		repl_consume(token_type::SEMICOLON, "Expected ';'");
 		return std::make_unique<Expression<T>>(expr);
 
 	}
 	std::unique_ptr<Stmt<T>>print_statement()
 	{
 		auto expr = expression();
-		if (!lox::repl_mode)
-			consume(token_type::SEMICOLON, "Expected ';'");
-		else {
-			match(token_type::SEMICOLON);
-		}
+		repl_consume(token_type::SEMICOLON, "Expected ';'");
 		return std::make_unique<Print<T>>(expr);
 	}
  	std::vector<std::shared_ptr<Stmt<T>>> block()
@@ -227,6 +220,8 @@ private:
 			return std::make_unique<Variable<T>>(previous());
 		if (match(token_type::LAMBDA))
 			return std::move(lambda());
+		if (match(token_type::THIS))
+			return std::make_unique<This_expr<T>>(previous());
 		
 		throw(error(peek(), "Expected expression "));
 		//above throws a std::exception, calling a function that calls
@@ -359,13 +354,11 @@ private:
 		if (match(token_type::EQUAL)) {
 			token equals = previous();
 			auto value = assignment();
-			try {
+			{
 				auto target = dynamic_cast<Variable<T>*>(expr.get());
+				if (!target) throw error(equals, "Invalid assignment target.");
 				token name = target->name;
 				return std::make_unique<Assign<T>>(name, value);
-			}
-			catch (...) {
-				error(equals, "Invalid assignment target.");
 			}
 		}
 		return expr;
@@ -423,6 +416,14 @@ private:
 	token previous()
 	{
 		return tokens.at(current - 1);
+	}
+	token repl_consume(token_type type, const char *msg)
+	{
+		if (lox::repl_mode) {
+			match(type);
+			return {};
+		}
+		return consume(type, msg);
 	}
 	bool match(token_type t)
 	{

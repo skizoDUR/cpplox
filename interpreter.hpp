@@ -23,7 +23,7 @@ class lox;
 template <typename T>
 class interpreter : public visitor<T> {
 private:
-
+	
 	void check_number_operand(token &Operator, std::any &operand)
 	{
 		if (operand.type() == typeid(double))
@@ -122,6 +122,9 @@ public:
  				std::cout << "true\n";
  			else std::cout << "false\n";
  		}
+		if (result.type() == typeid(lox_function<T>)) 
+			std::cout << "function type : arity " << std::any_cast<lox_function<T>>(result).arity() << '\n';
+		
 	}
 	void visit(Print<T> *stmt) override
 	{
@@ -173,6 +176,7 @@ public:
 				auto Environment = lox::heap.make<environment>(f.closure);
 				for (int i = 0; i < (int)f.function_decl.params.size(); i++)
 					Environment->define(f.function_decl.params[i].lexeme, arguments[i]);
+
 				try {
 					i.execute_block(f.function_decl.body, Environment);
 				}
@@ -323,6 +327,7 @@ public:
 			Environment->assign(expr->name, value);
 		return value;
 	}
+
 	T visit(Call<T> *expr) override
 	{
 		auto function_any = evaluate(expr->callee.get());
@@ -339,10 +344,13 @@ public:
 		std::vector<T> arg_list;
 		for (auto &i : expr->arguments)
 			arg_list.push_back(evaluate(i.get()));
+		auto old_function = This;
+		This = &function_call;
+		finally (
+			This = old_function;
+			);
 		auto ret = function_call.call(*this, arg_list);
-		
 		return ret;
-		
 	}
 	T visit(Lambda<T> *expr) override
 	{
@@ -369,6 +377,12 @@ public:
 			);
 		return f;
 	}
+	T visit(This_expr<T> *expr) override
+	{
+		if (!This)
+			throw runtime_exception(expr->Token, "Invalid use of This outside of function or class");
+		return *This;
+	}
 	void resolve(Expr<T> *expr, int depth)
 	{
 		//std::cout << expr << " depth: " << depth << std::endl;
@@ -376,7 +390,7 @@ public:
 	}
 	interpreter()
 	{
-/*		lox_function<T> clock(
+		lox_function<T> clock(
 				    [](lox_function<T> &f, interpreter<T> &i, std::vector<T> &a) ->T
 				    {
 					    return (double)(time(0));
@@ -400,11 +414,13 @@ public:
 			Environment,
 			{}
 			);
-		
+
 		Environment->define("clock", clock);
 		Environment->define("exit", exit);
-*/
+
 	}
+	lox_function<T> *This = nullptr;
+
 	~interpreter()
 	{
 		

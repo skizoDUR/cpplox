@@ -66,6 +66,10 @@ public:
 		report_unused();
 		end_scope();
 	}
+	T visit(This_expr<T> *expr) override
+	{
+		return {};
+	}
 	T visit(Variable<T> *expr) override
 	{
 		if (!scopes.empty()) {

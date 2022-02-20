@@ -43,7 +43,7 @@ void lox::run_file(const char *path)
 
 void lox::run_prompt()
 {
-
+	lox::repl_mode = true;
 	for (;;) {
 		std::string input;
 		std::cout << "> ";

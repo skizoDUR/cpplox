@@ -1,6 +1,8 @@
 #include "environment.hpp"
 #include "lox.hpp"
+#include "lox_function.hpp"
 #include "runtime_error.cpp"
+#include <any>
 
 void environment::define(std::string name, std::any value)
 {
