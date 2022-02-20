@@ -10,9 +10,14 @@ int main(int argc, char **argv)
 	}
 	else if (argc == 2) {
 		lox::run_file(argv[1]);
+		lox::run_prompt();
 	}
 	else {
-		lox::repl_mode = 1;
-		lox::run_prompt();
+		try {
+			lox::run_prompt();
+		}
+		catch (exit_ex&) {
+			std::cout << "Exit!" << '\n';
+		}
 	}
 }

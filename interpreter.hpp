@@ -23,7 +23,7 @@ class lox;
 template <typename T>
 class interpreter : public visitor<T> {
 private:
-
+	
 	void check_number_operand(token &Operator, std::any &operand)
 	{
 		if (operand.type() == typeid(double))
@@ -71,7 +71,6 @@ private:
 	std::unordered_map<Expr<T> *, int> locals; 
 	std::any lookup_variable(token name, Expr<T> *expr)
 	{
-		//std::cout << expr << " name : " << name.lexeme << '\n';
 		if (locals.contains(expr))
 			return Environment->get_at(locals[expr], name.lexeme);
 		return globals->get(name);
@@ -79,7 +78,7 @@ private:
 	//void execute(Stmt<T> &);
 public:
 	//statements
-	void execute_block(std::vector<std::unique_ptr<Stmt<T>>>  &stmts, environment *env)
+	void execute_block(std::vector<std::unique_ptr<Stmt<T>>>  &stmts, deferred_ptr<environment> &env)
  	{
 		auto previous = this->Environment;
 		this->Environment = env;
@@ -89,9 +88,18 @@ public:
 		for (auto i = stmts.begin(); i != stmts.end(); i++)
 			execute(i->get());
 	}
-
-	environment *Environment = new environment();
-	environment *globals = Environment;
+	void execute_block(std::vector<std::shared_ptr<Stmt<T>>>  &stmts, deferred_ptr<environment> &env)
+ 	{
+		auto previous = this->Environment;
+		this->Environment = env;
+		finally (
+			this->Environment = previous;
+			)
+		for (auto i = stmts.begin(); i != stmts.end(); i++)
+			execute(i->get());
+	}
+	deferred_ptr<environment> Environment = lox::heap.make<environment>();
+	deferred_ptr<environment> globals = Environment;
 
 	void visit(Stmt<T> *stmt) override
 	{
@@ -114,6 +122,9 @@ public:
  				std::cout << "true\n";
  			else std::cout << "false\n";
  		}
+		if (result.type() == typeid(lox_function<T>)) 
+			std::cout << "function type : arity " << std::any_cast<lox_function<T>>(result).arity() << '\n';
+		
 	}
 	void visit(Print<T> *stmt) override
 	{
@@ -129,8 +140,8 @@ public:
 	}
  	void visit(Block<T> *stmt) override
  	{
-		environment env(Environment);
- 		execute_block(stmt->statements, &env);
+		auto env = lox::heap.make<environment>(Environment);
+ 		execute_block(stmt->statements, env);
  	}
 	void visit(If<T> *stmt) override
 	{
@@ -162,31 +173,27 @@ public:
 		lox_function<T> f(
 			[](lox_function<T> &f, interpreter<T> &i, std::vector<T> &arguments) ->T
 			{
-				auto Environment = new environment(f.closure);
-				for (int i = 0; i < (int)f.function_decl->params.size(); i++)
-					Environment->define(f.function_decl->params[i].lexeme, arguments[i]);
-				finally (
-					delete Environment;
-					)
-					try {
-						i.execute_block(f.function_decl->body, Environment);
-					}
-					catch (Return_value &ret) {
-						return ret.value;
-					}
+				auto Environment = lox::heap.make<environment>(f.closure);
+				for (int i = 0; i < (int)f.function_decl.params.size(); i++)
+					Environment->define(f.function_decl.params[i].lexeme, arguments[i]);
+
+				try {
+					i.execute_block(f.function_decl.body, Environment);
+				}
+				catch (Return_value &ret) {
+					return ret.value;
+				}
 				return {};
 			},
 			[](lox_function<T> &declaration)->int
 			{
-				return declaration.function_decl->params.size();
+				return declaration.function_decl.params.size();
 			},
 			Environment,
-			stmt
+			*stmt
 			);
 		Environment->define(stmt->name.lexeme, f);
-		delete f.closure;
-		f.closure = new environment(*Environment);
-		Environment->define(stmt->name.lexeme, f);
+
 	}
 	void visit(Return<T> *stmt) override
 	{
@@ -320,6 +327,7 @@ public:
 			Environment->assign(expr->name, value);
 		return value;
 	}
+
 	T visit(Call<T> *expr) override
 	{
 		auto function_any = evaluate(expr->callee.get());
@@ -336,38 +344,44 @@ public:
 		std::vector<T> arg_list;
 		for (auto &i : expr->arguments)
 			arg_list.push_back(evaluate(i.get()));
+		auto old_function = This;
+		This = &function_call;
+		finally (
+			This = old_function;
+			);
 		auto ret = function_call.call(*this, arg_list);
-		
 		return ret;
-		
 	}
 	T visit(Lambda<T> *expr) override
 	{
 		lox_function<T> f(
 			[](lox_function<T> &f, interpreter<T> &i, std::vector<T> &arguments) ->T
 			{
-				auto Environment = new environment(f.closure);
-				for (int i = 0; i < (int)f.function_decl->params.size(); i++)
-					Environment->define(f.function_decl->params[i].lexeme, arguments[i]);
-				finally (
-					delete Environment;
-					)
-					try {
-						i.execute_block(f.function_decl->body, Environment);
-					}
-					catch (Return_value &ret) {
-						return ret.value;
-					}
+				auto Environment = lox::heap.make<environment>(f.closure);
+				for (int i = 0; i < (int)f.function_decl.params.size(); i++)
+					Environment->define(f.function_decl.params[i].lexeme, arguments[i]);
+				try {
+					i.execute_block(f.function_decl.body, Environment);
+				}
+				catch (Return_value &ret) {
+					return ret.value;
+				}
 				return {};
 			},
 			[](lox_function<T> &declaration)->int
 			{
-				return declaration.function_decl->params.size();
+				return declaration.function_decl.params.size();
 			},
 			Environment,
-			expr->declaration.get()
+			*expr->declaration.get()
 			);
 		return f;
+	}
+	T visit(This_expr<T> *expr) override
+	{
+		if (!This)
+			throw runtime_exception(expr->Token, "Invalid use of This outside of function or class");
+		return *This;
 	}
 	void resolve(Expr<T> *expr, int depth)
 	{
@@ -388,18 +402,38 @@ public:
 				    Environment,
 				    {}
 			);
+		lox_function<T> exit(
+			[](lox_function<T> &f, interpreter<T> &i, std::vector<T> &a) ->T
+			{
+				throw exit_ex();
+			},
+			[](lox_function<T> &decl)->int
+			{
+				return 0;
+			},
+			Environment,
+			{}
+			);
+
 		Environment->define("clock", clock);
+		Environment->define("exit", exit);
+
 	}
+	lox_function<T> *This = nullptr;
+
 	~interpreter()
 	{
-		delete this->Environment;
+		
 	}
 
 	T interpret(std::vector<std::unique_ptr<Stmt<T>>> &stmts)
 	{
 		try {
-			for (auto &i : stmts)
+			for (auto &i : stmts) {
 				execute(i.get());
+				lox::heap.collect();
+			}
+
 		} catch(runtime_exception &ex) {
 			lox::runtime_error(ex);
 		}

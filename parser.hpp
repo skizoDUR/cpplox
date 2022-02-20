@@ -19,14 +19,14 @@ class parser {
 private:
 	std::vector<token> tokens;
 	int current = 0;
-	bool is_at_loop = 0;
+
 	std::unique_ptr<Stmt<T>>var_declaration()
 	{
 		auto name = consume(token_type::IDENTIFIER, "Expected identifier name");
 		std::unique_ptr<Expr<T>>initializer; //empty initializer
 		if (match(token_type::EQUAL))
 			initializer = expression();
-		consume(token_type::SEMICOLON, "Expected ';' after variable declaration.");
+		repl_consume(token_type::SEMICOLON, "Expected ';' after variable declaration.");
 		return std::make_unique<Var<T>>(name, initializer);
 	}
 	std::unique_ptr<Stmt<T>>declaration()
@@ -48,7 +48,7 @@ private:
 	{
 		auto identifier = consume(token_type::IDENTIFIER, "Expected identifier after function declaration");
 		std::vector<token> parameters;
-		consume(token_type::LEFT_PAREN, "Ex-pected '(' after function declaration");
+		consume(token_type::LEFT_PAREN, "Expected '(' after function declaration");
 		if (peek().type != token_type::RIGHT_PAREN) {
 			do {
 				if (parameters.size() >= 255)
@@ -64,27 +64,19 @@ private:
 	std::unique_ptr<Stmt<T>>expression_statement()
 	{
 		auto expr = expression();
-		if (!lox::repl_mode)
-			consume(token_type::SEMICOLON, "Expected ';'");
-		else
-			match(token_type::SEMICOLON);
-		
+		repl_consume(token_type::SEMICOLON, "Expected ';'");
 		return std::make_unique<Expression<T>>(expr);
 
 	}
 	std::unique_ptr<Stmt<T>>print_statement()
 	{
 		auto expr = expression();
-		if (!lox::repl_mode)
-			consume(token_type::SEMICOLON, "Expected ';'");
-		else {
-			match(token_type::SEMICOLON);
-		}
+		repl_consume(token_type::SEMICOLON, "Expected ';'");
 		return std::make_unique<Print<T>>(expr);
 	}
- 	std::vector<std::unique_ptr<Stmt<T>>> block()
+ 	std::vector<std::shared_ptr<Stmt<T>>> block()
  	{
-		std::vector<std::unique_ptr<Stmt<T>>> statements;
+		std::vector<std::shared_ptr<Stmt<T>>> statements;
  		while (!check(token_type::RIGHT_BRACE) && !is_at_end())
 			statements.push_back(declaration());
  		consume(token_type::RIGHT_BRACE, "Expected }");
@@ -103,19 +95,14 @@ private:
 	}
  	std::unique_ptr<Stmt<T>>while_statement()
  	{
- 		is_at_loop = 1;
  		consume(token_type::LEFT_PAREN, "'(' Expected after while.");
  		std::unique_ptr<Expr<T>>condition = expression();
  		consume(token_type::RIGHT_PAREN, "')' Expected after condition.");
  		std::unique_ptr<Stmt<T>>then = statement();
- 		finally (
-			is_at_loop = 0;
-			)
 	        return std::make_unique<While<T>>(condition, then);
  	}
 	std::unique_ptr<Stmt<T>>for_statement()
 	{
-		is_at_loop = 1;
 		consume(token_type::LEFT_PAREN, "'(' Expected after for.");
 		std::unique_ptr<Stmt<T>>initializer ;
 		if (!match(token_type::SEMICOLON)) { //basically consumes for (; ...)
@@ -137,7 +124,7 @@ private:
 		
 		std::unique_ptr<Stmt<T>>body = statement();
 		if (increase) {
-			std::vector<std::unique_ptr<Stmt<T>>> tmp;
+			std::vector<std::shared_ptr<Stmt<T>>> tmp;
 			tmp.push_back(std::move(body));
 			tmp.push_back(std::make_unique<Expression<T>>(increase));
 			body = std::make_unique<Block<T>>(tmp);
@@ -148,16 +135,14 @@ private:
 		body = std::make_unique<While<T>>(condition, body);
 		
 		if (initializer.get()) { //there's an initializer
-			std::vector<std::unique_ptr<Stmt<T>>> tmp;
+			std::vector<std::shared_ptr<Stmt<T>>> tmp;
 			tmp.push_back(std::move(initializer));
 			tmp.push_back(std::move(body));
 			body = std::make_unique<Block<T>>(tmp);
 		}
 		
 		//we add the initializer to the beginning of the loop
-		finally (
-			is_at_loop = 0;
-			)
+
 		return body;
 	}
 	std::unique_ptr<Stmt<T>>statement()
@@ -166,7 +151,6 @@ private:
 			return std::move(return_statement());
 		if (match(token_type::BREAK))
 			return std::move(break_statement());
-		
 		if (match(token_type::WHILE))
 			return std::move(while_statement());
 		if (match(token_type::FOR))
@@ -195,10 +179,9 @@ private:
 	}
 	std::unique_ptr<Stmt<T>>break_statement()
 	{
-		if (!is_at_loop)
-			throw (error(previous(), "Break used outside of loop"));
+		auto keyword = previous();
 		consume(token_type::SEMICOLON, "Expected ';'");
-		return std::make_unique<Break<T>>();
+		return std::make_unique<Break<T>>(keyword);
 	}
 	bool is_increment()
 	{
@@ -237,6 +220,8 @@ private:
 			return std::make_unique<Variable<T>>(previous());
 		if (match(token_type::LAMBDA))
 			return std::move(lambda());
+		if (match(token_type::THIS))
+			return std::make_unique<This_expr<T>>(previous());
 		
 		throw(error(peek(), "Expected expression "));
 		//above throws a std::exception, calling a function that calls
@@ -369,13 +354,11 @@ private:
 		if (match(token_type::EQUAL)) {
 			token equals = previous();
 			auto value = assignment();
-			try {
+			{
 				auto target = dynamic_cast<Variable<T>*>(expr.get());
+				if (!target) throw error(equals, "Invalid assignment target.");
 				token name = target->name;
 				return std::make_unique<Assign<T>>(name, value);
-			}
-			catch (...) {
-				error(equals, "Invalid assignment target.");
 			}
 		}
 		return expr;
@@ -433,6 +416,14 @@ private:
 	token previous()
 	{
 		return tokens.at(current - 1);
+	}
+	token repl_consume(token_type type, const char *msg)
+	{
+		if (lox::repl_mode) {
+			match(type);
+			return {};
+		}
+		return consume(type, msg);
 	}
 	bool match(token_type t)
 	{

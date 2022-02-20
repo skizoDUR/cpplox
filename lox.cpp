@@ -7,6 +7,7 @@
 bool lox::had_error = 0;
 bool lox::had_runtime_error = 0;
 bool lox::repl_mode = 0;
+deferred_heap lox::heap;
 interpreter<std::any> lox::Interpreter;
 
 lox::lox()
@@ -25,6 +26,8 @@ void lox::run(std::string source)
 		return;
 	Resolver<std::any> resolver(Interpreter);
 	resolver.resolve(statements);
+	if (lox::had_error)
+		return;
 	lox::Interpreter.interpret(statements);
 }
 
@@ -40,7 +43,7 @@ void lox::run_file(const char *path)
 
 void lox::run_prompt()
 {
-
+	lox::repl_mode = true;
 	for (;;) {
 		std::string input;
 		std::cout << "> ";

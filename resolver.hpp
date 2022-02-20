@@ -12,9 +12,38 @@
 template <typename T>
 class Resolver : visitor<T> {
 public:
+	enum function_type {
+		NONE,
+		FUNCTION
+	};
+	struct variable_traits {
+		bool ready;
+		bool used;
+	};
+	bool is_at_loop = false;
+	function_type current_function = function_type::NONE;
 	interpreter<T> &Interpreter;
-	std::list<std::unordered_map<std::string, bool>> scopes;
-	Resolver(interpreter<T> &Interpreter) : Interpreter(Interpreter) {}
+	std::list<std::unordered_map<std::string, variable_traits>> scopes;
+	Resolver(interpreter<T> &Interpreter) : Interpreter(Interpreter)
+	{
+		scopes.emplace_back(); //global scope
+	}
+	void report_unused()
+	{
+		if (scopes.empty())
+			return;
+		for (auto &i : scopes.front())
+			if (!i.second.used)
+				std::cout << "Unused variable: " << i.first << '\n';
+
+	}
+	void becomes_used(token &name)
+	{
+		if (scopes.empty())
+			return;
+		if (scopes.front().contains(name.lexeme))
+			scopes.front()[name.lexeme].used = true; //variable becomes used
+	}
 	T visit(Expr<T> *expr) override
 	{
 		return expr->accept(this);
@@ -34,36 +63,45 @@ public:
 	{
 		begin_scope();
 		resolve(stmt->statements);
+		report_unused();
 		end_scope();
+	}
+	T visit(This_expr<T> *expr) override
+	{
+		return {};
 	}
 	T visit(Variable<T> *expr) override
 	{
 		if (!scopes.empty()) {
 			if (scopes.front().contains(expr->name.lexeme)) {
-				auto v = scopes.front()[expr->name.lexeme];
+				auto v = scopes.front()[expr->name.lexeme].ready;
 				if (!v)
 					lox::error(expr->name, "Can't read local variable in its own initializer");
 			}
 		}
+		becomes_used(expr->name); //this variable is used
 		resolve_local(expr, expr->name);
 		return {};
 	}
 	T visit(Assign<T> *expr) override
 	{
 		resolve(expr->value.get());
+		becomes_used(expr->name);
 		resolve_local(expr, expr->name);
 		return {};
 	}
 	T visit(Lambda<T> *expr) override
 	{
-		resolve(expr->declaration.get());
+		//I don't want the ANONYMOUS function to be taken into account as a variable
+		//As opposite to real functions lambdas don't bind a name themselves
+		resolve_function(expr->declaration.get(), function_type::FUNCTION);
 		return {};
 	}
 	void visit(Function<T> *stmt) override
 	{
 		declare(stmt->name);
 		define(stmt->name);
-		resolve_function(stmt);
+		resolve_function(stmt, function_type::FUNCTION);
 	}
 	void visit(Expression<T> *stmt) override
 	{
@@ -82,17 +120,23 @@ public:
 	}
 	void visit(Return<T> *stmt) override
 	{
+		if (current_function == function_type::NONE) {
+			lox::error(stmt->keyword, "Can't return from top level.");
+		}
 		if (stmt->value.get())
 			resolve(stmt->value.get());
 	}
 	void visit(While<T> *stmt) override
 	{
 		resolve(stmt->condition.get());
+		is_at_loop = true;
 		resolve(stmt->Then.get());
+		is_at_loop = false;
 	}
 	void visit(Break<T> *stmt) override
 	{
-		
+		if (!is_at_loop)
+			lox::error(stmt->keyword, "Break used outside of loop");
 	}
 	T visit(Binary<T> *expr) override
 	{
@@ -144,6 +188,11 @@ public:
 		for (auto &i : statements)
 			resolve(i.get());
 	}
+	void resolve(std::vector<std::shared_ptr<Stmt<T>>> &statements)
+	{
+		for (auto &i : statements)
+			resolve(i.get());
+	}
 	void resolve(Stmt<T> *stmt)
 	{
 		stmt->accept(this);
@@ -164,13 +213,14 @@ public:
 	{
 		if (scopes.empty())
 			return;
-		scopes.front()[name.lexeme] = false;
+		scopes.front()[name.lexeme].ready = false;
 	}
 	void define(token &name)
 	{
 		if (scopes.empty())
 			return;
-		scopes.front()[name.lexeme] = true;
+		scopes.front()[name.lexeme].ready = true;
+		scopes.front()[name.lexeme].used = false;
 	}
 	void resolve_local(Expr<T> *expr, token &name)
 	{
@@ -180,16 +230,19 @@ public:
 				break;
 			}
 	}
-	void resolve_function(Function<T> *stmt)
+	void resolve_function(Function<T> *stmt, function_type type)
 	{
+		auto enclosing_function = current_function;
+		current_function = type;
 		begin_scope();
 		for (auto &param : stmt->params) {
 			declare(param);
 			define(param);
 		}
 		resolve(stmt->body);
+		report_unused();
 		end_scope();
+		current_function = enclosing_function;
 	}
-
 };
 #endif

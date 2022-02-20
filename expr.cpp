@@ -92,7 +92,7 @@ template <typename T>
 class Assign : public Expr<T> {
 public:
 	token name;
-	std::unique_ptr<Expr<T>>value;
+	std::unique_ptr<Expr<T>> value;
 	Assign(token name, std::unique_ptr<Expr<T>> &value) :
 		name(name), value(std::move(value)) {}
 	T accept(visitor <T> *visitor) override
@@ -172,4 +172,15 @@ struct Lambda : public Expr<T> {
 	}
 
 };
+
+template <typename T>
+struct This_expr : public Expr<T> {
+	token Token;
+	This_expr(token Token) : Token(Token) {}
+	T accept(visitor<T> *visitor) override
+	{
+		return visitor->visit(this);
+	}
+};
+
 #endif

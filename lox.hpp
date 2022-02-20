@@ -8,11 +8,15 @@
 #include "runtime_error.cpp"
 #include "scanner.hpp"
 #include "token_type.hpp"
+#include "deferred_heap.hpp"
 template<typename T>
 class interpreter;
 
+class exit_ex {};
+
 class lox {
 public:
+	static deferred_heap heap;
 	static interpreter<std::any> Interpreter;
 	static bool had_error;
 	static bool repl_mode;
