@@ -1,5 +1,6 @@
 # cpplox
-The lox programming language in C++ (WIP)
+The lox programming language in C++ a work in progress.
+Lox is a high level garbage-collected scripting language designed for the book Crafting Interpreters by Robert Nystrom.
 
 # Features:
 
